@@ -34,3 +34,4 @@ geopandas
 shapely
 pysal
 esda
+djangorestframework-simplejwt

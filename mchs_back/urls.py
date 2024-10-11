@@ -15,8 +15,20 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
-from django.urls import path
+from django.urls import path, include
+
+# from .settings import DEBUG, MEDIA_URL, MEDIA_ROOT
+# from .swagger import swagger_urlpatterns
+
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
+    path('api/auth/', include('common.urls')),  # Include authentication routes from common app
+    path(route='api/', view=include(arg='modules.urls')),
+    # path(
+    #     route='admin_panel/',
+    #     view=include(arg=('admin_panel.urls', 'admin_panel'), namespace='admin_panel')
+    # ),
+    path(route='admin/', view=admin.site.urls),
 ]
+
+# urlpatterns += swagger_urlpatterns

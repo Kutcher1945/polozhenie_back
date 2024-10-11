@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+venv/
+.venv/
+
+# Django
+*.log
+*.pot
+*.pyc
+*.pyo
+*.db
+*.sqlite3
+/media
+/staticfiles
+/static
+/env/
+db.sqlite3
+instance/
+.env
+
+# Node.js
+node_modules/
+npm-debug.log
+yarn-error.log
+.npm
+
+# Flutter (if applicable)
+.packages
+.flutter-plugins
+.flutter-plugins-dependencies
+.dart_tool/
+build/
+ios/Pods/
+
+# VSCode
+.vscode/
+
+# macOS
+.DS_Store
+
+# Byte-compiled / optimized / DLL files
+*.pyd
+*.dll
+
+# IDE files
+*.idea
+*.iml
+venv/
