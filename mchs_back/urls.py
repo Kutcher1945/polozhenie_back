@@ -1,34 +1,52 @@
-"""
-URL configuration for mchs_back project.
-
-The `urlpatterns` list routes URLs to views. For more information please see:
-    https://docs.djangoproject.com/en/5.1/topics/http/urls/
-Examples:
-Function views
-    1. Add an import:  from my_app import views
-    2. Add a URL to urlpatterns:  path('', views.home, name='home')
-Class-based views
-    1. Add an import:  from other_app.views import Home
-    2. Add a URL to urlpatterns:  path('', Home.as_view(), name='home')
-Including another URLconf
-    1. Import the include() function: from django.urls import include, path
-    2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
-"""
 from django.contrib import admin
 from django.urls import path, include
+from rest_framework import permissions
+from drf_yasg.views import get_schema_view
+from drf_yasg import openapi
 
-# from .settings import DEBUG, MEDIA_URL, MEDIA_ROOT
-# from .swagger import swagger_urlpatterns
+# Swagger schema view configuration
+# Swagger схема для API
+schema_view = get_schema_view(
+    openapi.Info(
+        title="ДЧС/МЧС API",
+        default_version='v1',
+        description="""
+        Этот API предоставляет доступ к различным сервисам и данным, связанным с управлением чрезвычайными ситуациями и бедствиями.
+        Включает в себя эндпоинты для аутентификации пользователей, управления модулями, а также доступа к данным категорий, 
+        связанных с чрезвычайными ситуациями и общественной безопасностью.
+
+        Основные функции API:
+        - Аутентификация пользователей и управление JWT-токенами.
+        - Управление модулями, включая список категорий и подкатегорий.
+        - Поддержка фильтрации данных и сортировки.
+        - Безопасный доступ с использованием ролевых разрешений.
+        - Полная документация эндпоинтов с поддержкой OpenAPI для лёгкой интеграции.
+
+        Для дополнительной информации, пожалуйста, свяжитесь с поддержкой: adilan.akhramovich@gmail.com
+        """,
+        terms_of_service="https://www.example.com/terms/",
+        contact=openapi.Contact(email="adilan.akhramovich@gmail.com"),
+        license=openapi.License(name="BSD License"),
+    ),
+    public=True,
+    permission_classes=(permissions.AllowAny,),
+)
 
 
+# Main URL patterns
 urlpatterns = [
-    path('api/auth/', include('common.urls')),  # Include authentication routes from common app
-    path(route='api/', view=include(arg='modules.urls')),
-    # path(
-    #     route='admin_panel/',
-    #     view=include(arg=('admin_panel.urls', 'admin_panel'), namespace='admin_panel')
-    # ),
-    path(route='admin/', view=admin.site.urls),
-]
+    # Admin routes
+    path('admin/', admin.site.urls),
 
-# urlpatterns += swagger_urlpatterns
+    # Authentication routes (from the 'common' app)
+    path('api/auth/', include('common.urls')),  
+
+    # Modules routes (from the 'modules' app)
+    path('api/', include('modules.urls')),
+
+    # Swagger API documentation
+    path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
+    
+    # Raw schema JSON for OpenAPI
+    path('schema/', schema_view.without_ui(cache_timeout=0), name='schema-json'),
+]
