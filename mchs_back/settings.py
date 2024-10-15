@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     'common',
     'modules',
     'address',
+    'card101',
 ]
 
 
