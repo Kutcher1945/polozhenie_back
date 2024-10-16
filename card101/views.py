@@ -10,13 +10,13 @@ class OperationCardViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = []  # Add your permissions here
 
 
-class Card101ViewSet(viewsets.ReadOnlyModelViewSet):
+class Card101ViewSet(viewsets.ModelViewSet):
     queryset = Card101.objects.all()
     serializer_class = Card101Serializer
     permission_classes = []  # Add your permissions here
 
 
-class FireRankViewSet(viewsets.ReadOnlyModelViewSet):
+class FireRankViewSet(viewsets.ModelViewSet):
     queryset = FireRank.objects.all()
     serializer_class = Card101Serializer
     permission_classes = []  # Add your permissions here
