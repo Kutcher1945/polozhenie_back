@@ -1,7 +1,7 @@
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticatedOrReadOnly
+from rest_framework.permissions import IsAuthenticatedOrReadOnly, IsAuthenticated, DjangoModelPermissions
 from django.db.models import Q
 from .models.operation_card import OperationCard
 from .models.card101 import Card101
@@ -20,7 +20,7 @@ class Card101ViewSet(viewsets.ModelViewSet):
     queryset = Card101.objects.all().order_by('-id')  # Ordering by id in descending order (latest first)
     serializer_class = Card101Serializer
     pagination_class = CustomPagination  # Custom pagination class
-    permission_classes = [IsAuthenticatedOrReadOnly]  # Example permissions
+    permission_classes = []  # Example permissions
 
     # Custom action for searching
     @action(detail=False, methods=['get'], url_path='search')
