@@ -4,10 +4,10 @@ from .views import Card101ViewSet, OperationCardViewSet, FireRankViewSet
 
 router = DefaultRouter()
 router.register(
-    prefix='operation-card', viewset=OperationCardViewSet, basename='operation-card'
+    prefix='operation-cards', viewset=OperationCardViewSet, basename='operation-cards'
 )
 router.register(
-    prefix='fire-rank', viewset=FireRankViewSet, basename='fire-rank'
+    prefix='fire-ranks', viewset=FireRankViewSet, basename='fire-ranks'
 )
 router.register(
     prefix='card101', viewset=Card101ViewSet, basename='card101'

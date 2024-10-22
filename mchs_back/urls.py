@@ -47,6 +47,9 @@ urlpatterns = [
     #Card101 routes (from the 'card101' app)
     path('api/', include('card101.urls')),
 
+    #Address routes (from the 'address' app)
+    path('api/', include('address.urls')),
+
     # Swagger API documentation
     path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
     

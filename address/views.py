@@ -1,3 +1,11 @@
-from django.shortcuts import render
+from rest_framework import viewsets
+from rest_framework.response import Response
+from .models import CityDistrict
+from .serializers import CityDistrictSerializer  # You need to create a serializer
 
-# Create your views here.
+class CityDistrictViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    A simple ViewSet for viewing CityDistricts.
+    """
+    queryset = CityDistrict.objects.all()
+    serializer_class = CityDistrictSerializer
