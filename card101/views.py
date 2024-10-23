@@ -12,7 +12,6 @@ from common.helpers.pagination import CustomPagination
 class OperationCardViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = OperationCard.objects.filter(is_deleted=False)
     serializer_class = OperationCardSerializer
-    pagination_class = CustomPagination  # Add custom pagination class
     permission_classes = []  # Add your permissions here
 
 
@@ -43,5 +42,4 @@ class Card101ViewSet(viewsets.ModelViewSet):
 class FireRankViewSet(viewsets.ModelViewSet):
     queryset = FireRank.objects.all()
     serializer_class = FireRankSerializer
-    pagination_class = CustomPagination  # Add custom pagination class
     permission_classes = []  # Add your permissions here
