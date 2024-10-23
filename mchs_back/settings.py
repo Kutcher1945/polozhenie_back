@@ -188,3 +188,32 @@ STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+LEAFLET_CONFIG = {
+    'DEFAULT_CENTER': (43.238949, 76.889709),  # Almaty city coordinates
+    'DEFAULT_ZOOM': 10,
+    'MAX_ZOOM': 21,
+    'MIN_ZOOM': 10,
+    'DRAGGING': True,  # Disable panning (left and right)
+    'RESET_VIEW': False, #Disable panning (left and right)
+    'TILES': [
+            (
+                'Yandex',
+                'https://core-renderer-tiles.maps.yandex.net/tiles?l=map&x={x}&y={y}&z={z}&lang=ru_RU',
+                {
+                    'attribution': '&copy; Yandex',
+                    'maxZoom': 18,
+                    'minZoom': 0
+                }
+            )
+        ],
+        'SRID': 3395,  # Setting CRS to EPSG3395
+}
+
+
+LEAFLET_WIDGET_ATTRS = {
+    'map_height': '5000px',
+    'map_width': '100%',
+    'display_raw': 'true',
+    'map_srid': 4326,
+}

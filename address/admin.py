@@ -1,5 +1,40 @@
 from django.contrib import admin
 from .models import CityDistrictAkim, CityDistrict
+from django.contrib.gis import admin
+from leaflet.admin import LeafletGeoAdmin
+from .models import Microsectors
+
+@admin.register(Microsectors)
+class MicrosectorsAdmin(LeafletGeoAdmin):
+    list_display = ['name_ru', 'name_kz', 'line_color', 'fill_color', 'opacity', 'is_deleted', 'created_at', 'updated_at']
+    search_fields = ['name_ru', 'name_kz']
+    list_filter = ['is_deleted', 'created_at', 'updated_at']
+    readonly_fields = ['created_at', 'updated_at']
+    
+    # Use fieldsets to organize fields in the admin
+    fieldsets = (
+        (None, {
+            'fields': ('name_ru', 'name_kz', 'line_color', 'fill_color', 'opacity', 'boundary')
+        }),
+        ('Metadata', {
+            'fields': ('is_deleted', 'created_at', 'updated_at'),
+        }),
+    )
+
+    # Override to prevent editing of 'is_deleted'
+    def get_readonly_fields(self, request, obj=None):
+        if obj:  # If editing an existing object
+            return ['is_deleted', 'created_at', 'updated_at']
+        else:
+            return ['is_deleted', 'created_at', 'updated_at']
+
+    # Customize Leaflet map settings (optional)
+    settings_overrides = {
+        'DEFAULT_CENTER': (43.238949, 76.889709),  # Default map center (example: Almaty, Kazakhstan)
+        'DEFAULT_ZOOM': 12,  # Default map zoom level
+    }
+
+
 
 # CityDistrictAkim Admin Configuration
 @admin.register(CityDistrictAkim)
