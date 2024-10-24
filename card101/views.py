@@ -38,6 +38,18 @@ class Card101ViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
 
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        else:
+            print(serializer.errors)  # Log the exact errors for debugging
+            return Response(serializer.errors, status=400)
+
+
 
 class FireRankViewSet(viewsets.ModelViewSet):
     queryset = FireRank.objects.all()

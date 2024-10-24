@@ -5,7 +5,8 @@ from .models import CityDistrict, Microsectors
 class CityDistrictSerializer(serializers.ModelSerializer):
     class Meta:
         model = CityDistrict
-        fields = ['id', 'name_ru', 'name_kz']  # Add any other fields you need
+        geo_field = "geometry"  # Specify the Geo field
+        fields = '__all__'
 
 
 class MicrosectorsGeoSerializer(GeoFeatureModelSerializer):

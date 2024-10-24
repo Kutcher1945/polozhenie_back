@@ -18,11 +18,20 @@ class FireRankSerializer(serializers.ModelSerializer):
 
 
 class Card101Serializer(serializers.ModelSerializer):
-    # Use the nested serializers for the foreign key fields
-    operation_card = OperationCardSerializer(read_only=True)  # Show full operation card details
-    district = CityDistrictSerializer(read_only=True)  # Show full district details
-    fire_rank = FireRankSerializer(read_only=True)  # Show full fire rank details
+    # These fields accept the IDs for operation_card, district, and fire_rank
+    operation_card_id = serializers.PrimaryKeyRelatedField(queryset=OperationCard.objects.all(), source='operation_card', write_only=True)
+    district_id = serializers.PrimaryKeyRelatedField(queryset=CityDistrict.objects.all(), source='district', write_only=True)
+    fire_rank_id = serializers.PrimaryKeyRelatedField(queryset=FireRank.objects.all(), source='fire_rank', write_only=True)
+
+    # Existing nested serializers for read-only views
+    operation_card = OperationCardSerializer(read_only=True)
+    district = CityDistrictSerializer(read_only=True)
+    fire_rank = FireRankSerializer(read_only=True)
 
     class Meta:
         model = Card101
-        fields = '__all__'  # Or list the fields manually
+        fields = '__all__'
+
+
+
+

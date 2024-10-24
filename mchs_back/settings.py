@@ -133,14 +133,25 @@ WSGI_APPLICATION = 'mchs_back.wsgi.application'
 #     }
 # }
 
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.contrib.gis.db.backends.postgis',
+#         'NAME': 'shadow_garden',
+#         'USER': 'cda_alpha',
+#         'PASSWORD': 'Cfq,thNb13@',
+#         'HOST': '10.100.200.5',
+#         'PORT': '5440',
+#     }
+# }
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.contrib.gis.db.backends.postgis',
-        'NAME': 'shadow_garden',
-        'USER': 'cda_alpha',
-        'PASSWORD': 'Cfq,thNb13@',
-        'HOST': '10.100.200.5',
-        'PORT': '5440',
+        'NAME': 'dbunlikely',
+        'USER': 'crimson',
+        'PASSWORD': '4HPzQt2HyU',
+        'HOST': 'host.docker.internal',
+        'PORT': '5439',
     }
 }
 
