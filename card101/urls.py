@@ -1,6 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import Card101ViewSet, OperationCardViewSet, FireRankViewSet
+from .views import Card101ViewSet, OperationCardViewSet, FireRankViewSet, FireStationsViewSet
 
 router = DefaultRouter()
 router.register(
@@ -11,6 +11,9 @@ router.register(
 )
 router.register(
     prefix='card101', viewset=Card101ViewSet, basename='card101'
+)
+router.register(
+    prefix='fire-stations', viewset=FireStationsViewSet, basename='fire-stations'
 )
 
 urlpatterns = router.urls

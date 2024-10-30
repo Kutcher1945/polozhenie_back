@@ -6,7 +6,8 @@ from django.db.models import Q
 from .models.operation_card import OperationCard
 from .models.card101 import Card101
 from .models.fire_rank import FireRank
-from .serializers import Card101Serializer, OperationCardSerializer, FireRankSerializer
+from .models.fire_stations import FireStations
+from .serializers import Card101Serializer, OperationCardSerializer, FireRankSerializer, FireStationsSerializer
 from common.helpers.pagination import CustomPagination
 
 class OperationCardViewSet(viewsets.ReadOnlyModelViewSet):
@@ -54,4 +55,10 @@ class Card101ViewSet(viewsets.ModelViewSet):
 class FireRankViewSet(viewsets.ModelViewSet):
     queryset = FireRank.objects.all()
     serializer_class = FireRankSerializer
+    permission_classes = []  # Add your permissions here
+
+
+class FireStationsViewSet(viewsets.ModelViewSet):
+    queryset = FireStations.objects.all()
+    serializer_class = FireStationsSerializer
     permission_classes = []  # Add your permissions here

@@ -1,8 +1,7 @@
 from django.contrib import admin
-from .models import CityDistrictAkim, CityDistrict
+from .models import CityDistrictAkim, CityDistrict, LivingZones, Microsectors
 from django.contrib.gis import admin
 from leaflet.admin import LeafletGeoAdmin
-from .models import Microsectors
 
 @admin.register(Microsectors)
 class MicrosectorsAdmin(LeafletGeoAdmin):
@@ -29,11 +28,6 @@ class MicrosectorsAdmin(LeafletGeoAdmin):
             return ['is_deleted', 'created_at', 'updated_at']
 
     # Customize Leaflet map settings (optional)
-    settings_overrides = {
-        'DEFAULT_CENTER': (43.238949, 76.889709),  # Default map center (example: Almaty, Kazakhstan)
-        'DEFAULT_ZOOM': 12,  # Default map zoom level
-    }
-
 
 
 # CityDistrictAkim Admin Configuration
@@ -46,9 +40,16 @@ class CityDistrictAkimAdmin(admin.ModelAdmin):
 
 # CityDistrict Admin Configuration
 @admin.register(CityDistrict)
-class CityDistrictAdmin(admin.ModelAdmin):
+class CityDistrictAdmin(LeafletGeoAdmin):
     list_display = ('name_ru', 'name_kz', 'response_name_ru', 'response_name_kz', 'gerb_img', 'akim', 'created_at', 'updated_at')
     search_fields = ('name_ru', 'name_kz')
     list_filter = ('created_at', 'updated_at')
     ordering = ('name_ru',)
     list_select_related = ('akim',)  # Prefetch related Akim details for performance optimization
+
+
+@admin.register(LivingZones)
+class LivingZonesAdmin(LeafletGeoAdmin):
+    list_display = ('name_ru', 'name_kz', 'line_color', 'fill_color', 'opacity', 'is_deleted', 'created_at', 'updated_at')
+    search_fields = ('name_ru', 'name_kz')
+    list_filter = ('is_deleted', 'created_at', 'updated_at')

@@ -4,6 +4,7 @@ from .models.fire_rank import FireRank
 from .models.operation_card import OperationCard
 from address.models.district import CityDistrict
 from address.serializers import CityDistrictSerializer
+from .models.fire_stations import FireStations
 
 class OperationCardSerializer(serializers.ModelSerializer):
     class Meta:
@@ -33,5 +34,23 @@ class Card101Serializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
-
-
+class FireStationsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FireStations
+        geo_field = "location"  # Specify the Geo field
+        fields = [
+            'id',
+            'name_ru',
+            'name_kz',
+            'old_name_ru',
+            'old_name_ru',
+            'use_in_recommendations',
+            'use_in_records',
+            'district',
+            'sort_order',
+            'address',
+            'location',
+            'is_deleted',
+            'created_at',
+            'updated_at'
+        ]
