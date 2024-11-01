@@ -59,6 +59,11 @@ ingress:
     #   paths:
     #     - path: /sxodim(/|$)(.*)
     #       pathType: ImplementationSpecific
+  tls:
+    - secretName: smartalmaty-wildcard-0
+      hosts:
+        - opendata.smartalmaty.kz
+
 #  tls:
 #   - secretName: letsencrypt-prod
 #     hosts:
