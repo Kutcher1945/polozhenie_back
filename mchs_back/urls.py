@@ -36,7 +36,7 @@ schema_view = get_schema_view(
 # Main URL patterns
 urlpatterns = [
     # Admin routes
-    path('', admin.site.urls),
+    path('admin/', admin.site.urls),
 
     # Authentication routes (from the 'common' app)
     path('api/auth/', include('common.urls')),  
