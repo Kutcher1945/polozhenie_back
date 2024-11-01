@@ -1,7 +1,7 @@
 replicaCount: 1
 
 image:
-  repository: git-ci-cd.smartalmaty.kz:8443/opendata/experimental-admin-back
+  repository: git-ci-cd.smartalmaty.kz:8443/opendata/experimental_admin_back
   pullPolicy: IfNotPresent
   tag: "latest"
 
@@ -49,11 +49,11 @@ ingress:
     kubernetes.io/ingress.class: nginx
 #    cert-manager.io/cluster-issuer: letsencrypt-prod
     nginx.ingress.kubernetes.io/ssl-redirect: "false"
-    # nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
   hosts:
-    - host: exp-admin.smartalmaty.kz
+    - host: opendata.smartalmaty.kz
       paths:
-        - path: /
+        - path: /exp-admin(/|$)(.*)
           pathType: ImplementationSpecific
     # - host: opendata.smartalmaty.kz
     #   paths:
