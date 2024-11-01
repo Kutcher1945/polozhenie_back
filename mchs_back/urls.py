@@ -24,7 +24,7 @@ schema_view = get_schema_view(
 
         # Для дополнительной информации, пожалуйста, свяжитесь с поддержкой: adilan.akhramovich@gmail.com
         # """,
-        description=""" API desc """
+        description=""" API desc """,
         terms_of_service="https://www.example.com/terms/",
         contact=openapi.Contact(email="adilan.akhramovich@gmail.com"),
         license=openapi.License(name="BSD License"),
