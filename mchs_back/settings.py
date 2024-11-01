@@ -27,7 +27,7 @@ SECRET_KEY = 'django-insecure-nse+(m&)%(y#q&^_$^1*h((r@717^p0d7a_zacg_wfa6#cgb8z
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['exp-admin.smartalmaty.kz']
+ALLOWED_HOSTS = ['exp-admin.smartalmaty.kz', '127.0.0.1', 'localhost', 'exp.smartalmaty.kz']
 
 
 # Application definition
