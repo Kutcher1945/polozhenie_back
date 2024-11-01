@@ -3,9 +3,9 @@ from django.contrib.admin.models import LogEntry
 
 
 # Register your models here.
-admin.site.site_header  =  "Админка ДЧС/МЧС"  
-admin.site.site_title  =  "Админка ДЧС/МЧС"
-admin.site.index_title  =  "Админка ДЧС/МЧС"
+admin.site.site_header  =  "Админка"  
+admin.site.site_title  =  "Админка"
+admin.site.index_title  =  "Админка"
 
 
 
