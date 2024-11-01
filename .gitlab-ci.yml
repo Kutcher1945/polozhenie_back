@@ -1,0 +1,9 @@
+stages:
+  - containerize
+  - deploy-k8s
+
+include:
+  - project: 'opendata/devops/templates'
+    file: 'build/containerize.yaml'
+  - project: 'opendata/devops/templates'
+    file: 'deploy/k8s-deploy.yaml'
