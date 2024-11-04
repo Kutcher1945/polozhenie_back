@@ -97,12 +97,12 @@ ROOT_URLCONF = 'mchs_back.urls'
 CORS_ALLOW_ALL_ORIGINS = True
 
 
-CORS_ALLOWED_ORIGINS = [
-    'http://localhost:3000',  # React app Local
-    'http://localhost:8000',  # Django API Local
-    'https://exp.smartalmaty.kz/',  # React app Prod
-    'https://exp-admin.smartalmaty.kz/',  # Django API Prod
-]
+# CORS_ALLOWED_ORIGINS = [
+#     'http://localhost:3000',  # React app Local
+#     'http://localhost:8000',  # Django API Local
+#     'https://exp.smartalmaty.kz/',  # React app Prod
+#     'https://exp-admin.smartalmaty.kz/',  # Django API Prod
+# ]
 
 
 
