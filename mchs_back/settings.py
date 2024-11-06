@@ -96,6 +96,12 @@ ROOT_URLCONF = 'mchs_back.urls'
 
 CORS_ALLOW_ALL_ORIGINS = True
 
+CSRF_TRUSTED_ORIGINS = [
+    "https://exp-admin.smartalmaty.kz",
+    # Add other trusted origins if needed
+]
+
+CSRF_COOKIE_SECURE = True
 
 # CORS_ALLOWED_ORIGINS = [
 #     'http://localhost:3000',  # React app Local
@@ -104,6 +110,8 @@ CORS_ALLOW_ALL_ORIGINS = True
 #     'https://exp-admin.smartalmaty.kz/',  # Django API Prod
 # ]
 
+# Enforce HTTPS
+SECURE_SSL_REDIRECT = True
 
 
 TEMPLATES = [
