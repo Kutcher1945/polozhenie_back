@@ -7,7 +7,7 @@ class Microsectors(models.Model):
     line_color = RGBColorField(verbose_name="Цвет линии", help_text="Выберите цвет линии")
     fill_color = RGBColorField(verbose_name="Цвет заливки", help_text="Выберите цвет заливки")
     opacity = models.FloatField(verbose_name="Прозрачность", help_text="Прозрачность от 0 до 1")
-    boundary = models.MultiPolygonField(verbose_name="Границы на карте", srid=4326)
+    boundary = models.MultiPolygonField(verbose_name="Границы на карте", srid=4326, blank=True, null=True)
     is_deleted = models.BooleanField(editable=False, default=False)
     created_at = models.DateTimeField(editable=False, auto_now=True)
     updated_at = models.DateTimeField(editable=False, auto_now=True)
