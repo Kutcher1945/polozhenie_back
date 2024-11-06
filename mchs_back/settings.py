@@ -96,10 +96,10 @@ ROOT_URLCONF = 'mchs_back.urls'
 
 CORS_ALLOW_ALL_ORIGINS = True
 
-CSRF_TRUSTED_ORIGINS = [
-    "https://exp-admin.smartalmaty.kz",
-    # Add other trusted origins if needed
-]
+# CSRF_TRUSTED_ORIGINS = [
+#     "https://exp-admin.smartalmaty.kz",
+#     # Add other trusted origins if needed
+# ]
 
 # CSRF_COOKIE_SECURE = True
 
