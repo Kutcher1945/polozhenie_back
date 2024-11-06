@@ -79,11 +79,11 @@ SIMPLE_JWT = {
 }
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',  # Добавляем middleware для CORS
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
-    'corsheaders.middleware.CorsMiddleware',  # Добавляем middleware для CORS
     'django.middleware.common.CommonMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
@@ -96,10 +96,19 @@ ROOT_URLCONF = 'mchs_back.urls'
 
 CORS_ALLOW_ALL_ORIGINS = True
 
-# CSRF_TRUSTED_ORIGINS = [
-#     "https://exp-admin.smartalmaty.kz",
-#     # Add other trusted origins if needed
-# ]
+# CORS_ALLOW_ALL_ORIGINS = True  # Comment this line after testing
+CORS_ALLOWED_ORIGINS = [
+    'https://exp-admin.smartalmaty.kz',
+    'http://localhost:3000',  # If using React on localhost for testing
+]
+
+
+
+CSRF_TRUSTED_ORIGINS = [
+    "https://exp-admin.smartalmaty.kz",
+    "http://localhost:3001",
+    # Add other trusted origins if needed
+]
 
 # CSRF_COOKIE_SECURE = True
 
@@ -111,7 +120,7 @@ CORS_ALLOW_ALL_ORIGINS = True
 # ]
 
 # Enforce HTTPS
-SECURE_SSL_REDIRECT = True
+SECURE_SSL_REDIRECT = False if DEBUG else True
 
 
 TEMPLATES = [
