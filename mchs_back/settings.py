@@ -101,7 +101,7 @@ CSRF_TRUSTED_ORIGINS = [
     # Add other trusted origins if needed
 ]
 
-CSRF_COOKIE_SECURE = True
+# CSRF_COOKIE_SECURE = True
 
 # CORS_ALLOWED_ORIGINS = [
 #     'http://localhost:3000',  # React app Local
