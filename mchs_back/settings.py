@@ -27,7 +27,7 @@ SECRET_KEY = 'django-insecure-nse+(m&)%(y#q&^_$^1*h((r@717^p0d7a_zacg_wfa6#cgb8z
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['exp-admin.smartalmaty.kz', '127.0.0.1', 'localhost', 'exp.smartalmaty.kz']
+ALLOWED_HOSTS = ['exp-admin.smartalmaty.kz', '127.0.0.1', 'localhost', 'exp.smartalmaty.kz', '10.202.26.50']
 
 
 # Application definition
@@ -157,11 +157,11 @@ WSGI_APPLICATION = 'mchs_back.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.contrib.gis.db.backends.postgis',
-        'NAME': 'shadow_garden',
-        'USER': 'cda_alpha',
-        'PASSWORD': 'Cfq,thNb13@',
-        'HOST': '10.100.200.5',
-        'PORT': '5440',
+        'NAME': 'emergency_db',
+        'USER': 'emergency',
+        'PASSWORD': 'bal788Fc1911',
+        'HOST': '10.202.26.4',
+        'PORT': '5432',
     }
 }
 
