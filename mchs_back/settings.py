@@ -154,16 +154,29 @@ WSGI_APPLICATION = 'mchs_back.wsgi.application'
 #     }
 # }
 
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.contrib.gis.db.backends.postgis',
+#         'NAME': 'emergency_db',
+#         'USER': 'emergency',
+#         'PASSWORD': 'bal788Fc1911',
+#         'HOST': '10.202.26.4',
+#         'PORT': '5432',
+#     }
+# }
+
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.contrib.gis.db.backends.postgis',
-        'NAME': 'emergency_db',
-        'USER': 'emergency',
-        'PASSWORD': 'bal788Fc1911',
-        'HOST': '10.202.26.4',
-        'PORT': '5432',
+        'NAME': 'shadow_garden',
+        'USER': 'cda_alpha',
+        'PASSWORD': 'Cfq,thNb13@',
+        'HOST': '10.100.200.5',
+        'PORT': '5440',
     }
 }
+
 
 # DATABASES = {
 #     'default': {
