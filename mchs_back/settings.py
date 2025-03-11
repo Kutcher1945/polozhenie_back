@@ -169,11 +169,11 @@ WSGI_APPLICATION = 'mchs_back.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.contrib.gis.db.backends.postgis',
-        'NAME': 'shadow_garden',
-        'USER': 'cda_alpha',
-        'PASSWORD': 'Cfq,thNb13@',
-        'HOST': '10.100.200.5',
-        'PORT': '5440',
+        'NAME': 'itry_db',
+        'USER': 'itry',
+        'PASSWORD': 'admin123456@',
+        'HOST': '10.100.200.150',
+        'PORT': '5439',
     }
 }
 
