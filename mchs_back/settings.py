@@ -169,11 +169,11 @@ WSGI_APPLICATION = 'mchs_back.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.contrib.gis.db.backends.postgis',
-        'NAME': 'emergency_db',
-        'USER': 'admin',
-        'PASSWORD': '4HPzQt2HyU',
-        'HOST': '172.30.227.203',
-        'PORT': '5433',
+        'NAME': 'db_core',
+        'USER': 'itry',
+        'PASSWORD': 'admin123456@',
+        'HOST': '10.100.200.150',
+        'PORT': '5439',
     }
 }
 
