@@ -5,23 +5,6 @@ image:
   pullPolicy: IfNotPresent
   tag: "latest"
 
-# env:
-#   open:
-#     - name: "value"
-#       value: "null"
-#     - name: HTTP_PORT
-#       value: "3000"
-#     - name: SPRING_DATASOURCE_URL
-#       value: jdbc:postgresql://10.100.200.28:5000/sxodim-db
-#     - name: SPRING_DATASOURCE_USERNAME
-#       value: opendata
-#     - name: SPRING_DATASOURCE_PASSWORD
-#       value: Jgn-kgh0uJGN*74
-#     - name: SPRING_JPA_HIBERNATE_DDL_AUTO
-#       value: update
-#     - name: SPRING_JPA_SHOW_SQL
-#       value: "true"
-
 
 imagePullSecrets:
   - name: regcred
@@ -43,6 +26,7 @@ service:
   type: ClusterIP
   port: 8000
 
+
 ingress:
   enabled: true
   annotations:
@@ -55,20 +39,11 @@ ingress:
       paths:
         - path: /
           pathType: ImplementationSpecific
-    # - host: opendata.smartalmaty.kz
-    #   paths:
-    #     - path: /sxodim(/|$)(.*)
-    #       pathType: ImplementationSpecific
   tls:
     - secretName: smartalmaty-wildcard-0
       hosts:
-        - opendata.smartalmaty.kz
+        - exp-admin.smartalmaty.kz
 
-#  tls:
-#   - secretName: letsencrypt-prod
-#     hosts:
-#       - exp-admin.smartalmaty.kz
-#       - opendata.smartalmaty.kz
 
 
 resources:
