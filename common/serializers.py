@@ -1,19 +1,37 @@
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-from django.contrib.auth.models import User
 from rest_framework import serializers
+from .models import User
 
-class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
-    @classmethod
-    def get_token(cls, user):
-        token = super().get_token(user)
 
-        # Add custom claims here if needed, e.g., token['email'] = user.email
-        return token
+class UserSerializer(serializers.ModelSerializer):
+    role_display = serializers.SerializerMethodField()
 
-    def validate(self, attrs):
-        # Modify this if needed to handle email or username for login
-        data = super().validate(attrs)
+    class Meta:
+        model = User
+        fields = ["id", "first_name", "last_name", "phone", "email", "password", "role", "role_display"]
+        extra_kwargs = {"password": {"write_only": True}}
 
-        # Add more data to the response if necessary
-        data['username'] = self.user.username
-        return data
+    def get_role_display(self, obj):
+        return dict(User.ROLE_CHOICES).get(obj.role, "Неизвестно")
+
+
+    def validate_email(self, value):
+        if User.objects.filter(email=value).exists():
+            raise serializers.ValidationError("A user with this email already exists.")
+        return value
+
+    def validate_phone(self, value):
+        if User.objects.filter(phone=value).exists():
+            raise serializers.ValidationError("A user with this phone number already exists.")
+        return value
+
+    def create(self, validated_data):
+        return User.objects.create(**validated_data)
+
+
+class UserProfileSerializer(serializers.ModelSerializer):
+    """Serializer for user profile details."""
+    class Meta:
+        model = User
+        fields = ['id', 'first_name', 'last_name', 'phone', 'email',]
+        read_only_fields = ['email']
+

@@ -1,17 +1,19 @@
 from django.contrib import admin
-from django.contrib.admin.models import LogEntry
+from .models import User, CustomToken
+
+@admin.register(User)
+class UserAdmin(admin.ModelAdmin):
+    list_display = ("email", "phone", "first_name", "last_name", "is_active", "created_at", "role")
+    search_fields = ("email", "phone", "first_name", "last_name")
+    list_filter = ("is_active", "created_at")
+    ordering = ("-created_at",)
+    readonly_fields = ("created_at", "updated_at")
+
+@admin.register(CustomToken)
+class CustomTokenAdmin(admin.ModelAdmin):
+    list_display = ("key", "user", "created_at")
+    search_fields = ("user__email",)
+    ordering = ("-created_at",)
+    readonly_fields = ("key", "created_at")
 
 
-# Register your models here.
-admin.site.site_header  =  "Админка"  
-admin.site.site_title  =  "Админка"
-admin.site.index_title  =  "Админка"
-
-
-
-class LogEntryAdmin(admin.ModelAdmin):
-    list_display = ('id', 'action_time', 'user', 'content_type', 'object_id', 'object_repr', 'action_flag', 'change_message')
-    list_filter = ( 'user', 'action_flag', 'action_time', 'content_type')
-    search_fields = ('user__username', 'object_repr', 'change_message')
-
-admin.site.register(LogEntry, LogEntryAdmin)

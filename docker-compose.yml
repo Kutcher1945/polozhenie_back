@@ -3,96 +3,63 @@ version: '3.8'
 services:
   web:
     build: .
-    container_name: mchs_back
+    container_name: django_core
+    command: >
+      sh -c "python manage.py migrate &&
+             python manage.py collectstatic --noinput &&
+             gunicorn mchs_back.wsgi:application --bind 0.0.0.0:8000"
     ports:
       - "8000:8000"
     volumes:
       - .:/app
-    # depends_on:
-    #   - db
-      # - prefect-server
+    depends_on:
+      - db
+      - redis
+    environment:
+      - DJANGO_SETTINGS_MODULE=mchs_back.settings
+      - TZ=Asia/Almaty
 
-  # db:
-  #   image: postgis/postgis:13-3.1
-  #   container_name: postgis
-  #   environment:
-  #     POSTGRES_DB: sitcenter_postgis_datalake
-  #     POSTGRES_USER: la_noche_estrellada
-  #     POSTGRES_PASSWORD: Cfq,thNb13@
-  #   ports:
-  #     - "6590:5439"
+  celery:
+    build: .
+    container_name: celery
+    command: celery -A mchs_back worker --loglevel=info
+    volumes:
+      - .:/app
+    depends_on:
+      - web
+      - redis
+    environment:
+      - DJANGO_SETTINGS_MODULE=mchs_back.settings
+      - TZ=Asia/Almaty
 
-  # prefect-server:
-  #   image: prefecthq/server:latest
-  #   container_name: prefect-server
-  #   environment:
-  #     PREFECT_SERVER_DB_CONN: postgresql://postgres:password@prefect-db:5432/prefect
-  #   ports:
-  #     - "4200:4200"
-  #   depends_on:
-  #     - prefect-db
+  celery-beat:
+    build: .
+    container_name: celery-beat
+    command: celery -A mchs_back beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    volumes:
+      - .:/app
+    depends_on:
+      - web
+      - redis
+    environment:
+      - DJANGO_SETTINGS_MODULE=mchs_back.settings
+      - TZ=Asia/Almaty
 
-  # prefect-db:
-  #   image: postgres:13
-  #   container_name: prefect-db
-  #   environment:
-  #     POSTGRES_DB: prefect
-  #     POSTGRES_USER: postgres
-  #     POSTGRES_PASSWORD: password
-  #   ports:
-  #     - "5432:5432"
+  redis:
+    image: redis:7
+    container_name: redis
+    ports:
+      - "6389:6379"
+    environment:
+      - TZ=Asia/Almaty
 
-  # prefect-agent:
-  #   image: prefecthq/prefect:latest
-  #   container_name: prefect-agent
-  #   environment:
-  #     PREFECT_API_URL: http://prefect-server:4200  # Prefect Server URL
-  #   depends_on:
-  #     - prefect-server
-  #   command: prefect agent local start
-
-
-
-
-  # bot:
-  #   container_name: bot
-  #   build: .
-  #   command: sh -c "watchmedo auto-restart --directory=./ --pattern=*.py --recursive -- python manage.py startbot"
-  #   volumes:
-  #     - .:/usr/src/app
-  #   depends_on:
-  #     - db
-  #   environment:
-  #     - DATABASE_URL=postgres://la_noche_estrellada:Cfq,thNb13@172.30.227.205:5439/sitcenter_postgis_datalake
-  #     - API_TOKEN=7206279604:AAGXE2H3sBYIQWszD7goB_4MbIwQLa8-gfE
-
-# volumes:
-#   postgres_data:
-
-   # Redis service (message broker)
-  # redis:
-  #   image: redis:latest
-  #   container_name: redis
-
-  # # Celery worker service
-  # worker:
-  #   container_name: celery_worker
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile
-  #   command: celery -A django_leaflet worker --loglevel=info
-  #   volumes:
-  #     - .:/app
-  #   depends_on:
-  #     - db
-  #     - redis
-
-  # verification:
-  #   container_name: verification
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile.dev
-  #   command: python -u py.py
-  #   environment:
-  #     - TZ=Asia/Almaty
-  #   restart: always
+  db:
+    image: postgis/postgis:13-3.1
+    container_name: django-postgis
+    environment:
+      POSTGRES_DB: db_core
+      POSTGRES_USER: itry
+      POSTGRES_PASSWORD: admin123456@
+      TZ: Asia/Almaty
+    ports:
+      - "6590:5439"
