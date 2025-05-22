@@ -116,14 +116,8 @@ REST_FRAMEWORK = {
 CORS_ALLOW_ALL_ORIGINS = True  # Set this to False if not already 
 
 CSRF_TRUSTED_ORIGINS = [
-    'https://api.testfront.csti.kz',
-    'https://testfront.csti.kz',
-    'https://85.202.192.35',
-    'http://85.202.192.35',
     'http://127.0.0.1:5173',
     'http://127.0.0.1:8000/',
-    'https://api.csti.kz',
-    'https://csti.kz',
     'https://exp-admin.smartalmaty.kz',
 ]
 
