@@ -28,10 +28,6 @@ DEBUG = True
 
 ALLOWED_HOSTS = ['127.0.0.1', 'localhost', '.vercel.app', 'exp-admin.smartalmaty.kz']
 
-CSRF_TRUSTED_ORIGINS = [
-    "https://exp-admin.smartalmaty.kz",
-]
-
 # Application definition
 
 INSTALLED_APPS = [
@@ -128,6 +124,7 @@ CSRF_TRUSTED_ORIGINS = [
     'http://127.0.0.1:8000/',
     'https://api.csti.kz',
     'https://csti.kz',
+    'https://exp-admin.smartalmaty.kz',
 ]
 
 TEMPLATES = [
