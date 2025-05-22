@@ -1,5 +1,5 @@
 minio
-django
+django<5.0
 psycopg2-binary
 django-leaflet
 django-leaflet-storage
