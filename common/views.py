@@ -57,27 +57,27 @@ class UserViewSet(ModelViewSet):
     @action(detail=False, methods=["post"], url_path="login")
     def login(self, request):
         """Handles user login using email and password."""
-
+    
         email = request.data.get("email", "").strip().lower()
         password = request.data.get("password")
-
+    
         print("🔹 Login attempt for email:", email)
-
+    
         try:
             user = User.objects.get(email=email)
         except User.DoesNotExist:
             return Response({"error": "Invalid email or password."}, status=status.HTTP_401_UNAUTHORIZED)
-
+    
         if not user.check_password(password):
             return Response({"error": "Invalid email or password."}, status=status.HTTP_401_UNAUTHORIZED)
-
+    
         if not user.is_active:
             return Response({"error": "Account is inactive. Please contact support."}, status=status.HTTP_403_FORBIDDEN)
-
+    
         # ✅ Remove existing tokens and generate a new one
         CustomToken.objects.filter(user=user).delete()
         token = CustomToken.objects.create(user=user)
-
+    
         return Response(
             {
                 "message": "Login successful!",
@@ -88,7 +88,8 @@ class UserViewSet(ModelViewSet):
                     "last_name": user.last_name,
                     "role": user.role,
                 },
-                "token": token.key,  # ✅ Return correct token
+                "access_token": token.key,   # ✅ renamed for frontend
+                "refresh_token": token.key,  # ❗ you can later change this to separate value
             },
             status=status.HTTP_200_OK,
         )
@@ -221,3 +222,35 @@ class UserProfileViewSet(ViewSet):
             return Response(
                 {"error": "User not found."}, status=status.HTTP_404_NOT_FOUND
             )
+        
+    @swagger_auto_schema(
+        method="post",
+        operation_description="Refresh access token",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                "refresh_token": openapi.Schema(type=openapi.TYPE_STRING),
+            },
+            required=["refresh_token"],
+        ),
+        responses={200: "New token returned", 401: "Invalid refresh token"},
+    )
+    @action(detail=False, methods=["post"], url_path="auth/refresh", url_name="refresh")
+    def refresh_token(self, request):
+        refresh_token = request.data.get("refresh_token")
+
+        if not refresh_token:
+            return Response({"error": "Refresh token is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            token_obj = CustomToken.objects.get(key=refresh_token)
+        except CustomToken.DoesNotExist:
+            return Response({"error": "Invalid or expired refresh token"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        # Удаляем старый токен и создаем новый
+        token_obj.delete()
+        new_token = CustomToken.objects.create(user=token_obj.user)
+
+        return Response({
+            "access_token": new_token.key,
+        }, status=status.HTTP_200_OK)

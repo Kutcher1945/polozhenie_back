@@ -35,7 +35,10 @@ class User(BaseModel):
     password = models.CharField(max_length=255, verbose_name="Пароль")  # ✅ Must store hashed passwords!
     first_name = models.CharField(max_length=150, null=True, blank=True, verbose_name="Имя")
     last_name = models.CharField(max_length=150, null=True, blank=True, verbose_name="Фамилия")
-    is_active = models.BooleanField(default=True, verbose_name="Активен")
+    is_active = models.BooleanField(default=True, verbose_name="Активен")\
+    # 🔧 Добавь вот это:
+    is_staff = models.BooleanField(default=False, verbose_name="Сотрудник")
+    is_superuser = models.BooleanField(default=False, verbose_name="Суперпользователь")
     role = models.CharField(max_length=15, choices=ROLE_CHOICES, default='patient', verbose_name="Роль")
 
     def set_password(self, raw_password):
