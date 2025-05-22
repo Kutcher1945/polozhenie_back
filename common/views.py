@@ -57,27 +57,27 @@ class UserViewSet(ModelViewSet):
     @action(detail=False, methods=["post"], url_path="login")
     def login(self, request):
         """Handles user login using email and password."""
-    
+
         email = request.data.get("email", "").strip().lower()
         password = request.data.get("password")
-    
+
         print("🔹 Login attempt for email:", email)
-    
+
         try:
             user = User.objects.get(email=email)
         except User.DoesNotExist:
             return Response({"error": "Invalid email or password."}, status=status.HTTP_401_UNAUTHORIZED)
-    
+
         if not user.check_password(password):
             return Response({"error": "Invalid email or password."}, status=status.HTTP_401_UNAUTHORIZED)
-    
+
         if not user.is_active:
             return Response({"error": "Account is inactive. Please contact support."}, status=status.HTTP_403_FORBIDDEN)
-    
+
         # ✅ Remove existing tokens and generate a new one
         CustomToken.objects.filter(user=user).delete()
         token = CustomToken.objects.create(user=user)
-    
+
         return Response(
             {
                 "message": "Login successful!",
@@ -114,12 +114,17 @@ class UserViewSet(ModelViewSet):
     def get_available_doctors(self, request):
         """Fetch a list of available doctors."""
         doctors = User.objects.filter(role="doctor", is_active=True)
-        
+
         if not doctors.exists():
             return Response({"error": "No available doctors found."}, status=status.HTTP_404_NOT_FOUND)
 
         doctor_list = [
-            {"id": doctor.id, "name": f"{doctor.first_name} {doctor.last_name}", "email": doctor.email}
+            {
+                "id": doctor.id,
+                "name": f"{doctor.first_name} {doctor.last_name}",
+                "email": doctor.email,
+                "doctor_type": doctor.doctor_type,  # 🆕 Add doctor_type field
+            }
             for doctor in doctors
         ]
         return Response({"doctors": doctor_list}, status=status.HTTP_200_OK)

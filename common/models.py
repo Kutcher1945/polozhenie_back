@@ -40,6 +40,7 @@ class User(BaseModel):
     is_staff = models.BooleanField(default=False, verbose_name="Сотрудник")
     is_superuser = models.BooleanField(default=False, verbose_name="Суперпользователь")
     role = models.CharField(max_length=15, choices=ROLE_CHOICES, default='patient', verbose_name="Роль")
+    doctor_type = models.CharField(max_length=150, null=True, blank=True, verbose_name="Тип врача")
 
     def set_password(self, raw_password):
         """Hashes and saves the password"""
