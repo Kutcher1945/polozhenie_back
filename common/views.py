@@ -17,30 +17,53 @@ class UserViewSet(ModelViewSet):
     queryset = User.objects.all()
     serializer_class = UserSerializer
 
+    
     @swagger_auto_schema(
         operation_description="Register a new user",
         request_body=UserSerializer,
-        responses={201: "User registered successfully!", 400: "Validation error", 409: "User with the given email or phone already exists."},
+        responses={
+            201: "User registered successfully!",
+            400: "Validation error",
+            409: "User with the given email or phone already exists."
+        },
     )
     @action(detail=False, methods=["post"], url_path="register")
     def register(self, request):
         """Handles user registration with role support."""
+    
+        logger.debug("📥 Incoming registration data: %s", request.data)
+    
         serializer = self.get_serializer(data=request.data)
-
+    
         if serializer.is_valid():
+            logger.debug("✅ Serializer valid: %s", serializer.validated_data)
+    
             email = serializer.validated_data["email"]
             phone = serializer.validated_data["phone"]
-            role = serializer.validated_data.get("role", "patient")  # ✅ Default to "patient"
-
+            role = serializer.validated_data.get("role", "patient")
+    
             if User.objects.filter(Q(email=email) | Q(phone=phone)).exists():
-                return Response({"error": "A user with this email or phone already exists."}, status=status.HTTP_409_CONFLICT)
-
+                logger.warning("⚠️ Duplicate user attempted: %s / %s", email, phone)
+                return Response(
+                    {"error": "A user with this email or phone already exists."},
+                    status=status.HTTP_409_CONFLICT,
+                )
+    
             serializer.validated_data["password"] = make_password(serializer.validated_data["password"])
             user = serializer.save()
-
-            return Response({"message": "Registration successful!", "user": serializer.data}, status=status.HTTP_201_CREATED)
-
-        return Response({"error": "Validation error", "details": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+    
+            logger.info("🆕 User registered: %s", user)
+    
+            return Response(
+                {"message": "Registration successful!", "user": serializer.data},
+                status=status.HTTP_201_CREATED,
+            )
+    
+        logger.error("❌ Validation error: %s", serializer.errors)
+        return Response(
+            {"error": "Validation error", "details": serializer.errors},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     @swagger_auto_schema(
         operation_description="User login",
