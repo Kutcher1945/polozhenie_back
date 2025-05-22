@@ -28,6 +28,9 @@ DEBUG = True
 
 ALLOWED_HOSTS = ['127.0.0.1', 'localhost', '.vercel.app', 'exp-admin.smartalmaty.kz']
 
+CSRF_TRUSTED_ORIGINS = [
+    "https://exp-admin.smartalmaty.kz",
+]
 
 # Application definition
 
