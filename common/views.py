@@ -30,35 +30,35 @@ class UserViewSet(ModelViewSet):
     @action(detail=False, methods=["post"], url_path="register")
     def register(self, request):
         """Handles user registration with role support."""
-    
+
         logger.debug("📥 Incoming registration data: %s", request.data)
-    
+
         serializer = self.get_serializer(data=request.data)
-    
+
         if serializer.is_valid():
             logger.debug("✅ Serializer valid: %s", serializer.validated_data)
-    
+
             email = serializer.validated_data["email"]
             phone = serializer.validated_data["phone"]
             role = serializer.validated_data.get("role", "patient")
-    
+
             if User.objects.filter(Q(email=email) | Q(phone=phone)).exists():
                 logger.warning("⚠️ Duplicate user attempted: %s / %s", email, phone)
                 return Response(
                     {"error": "A user with this email or phone already exists."},
                     status=status.HTTP_409_CONFLICT,
                 )
-    
+
             serializer.validated_data["password"] = make_password(serializer.validated_data["password"])
             user = serializer.save()
-    
+
             logger.info("🆕 User registered: %s", user)
-    
+
             return Response(
                 {"message": "Registration successful!", "user": serializer.data},
                 status=status.HTTP_201_CREATED,
             )
-    
+
         logger.error("❌ Validation error: %s", serializer.errors)
         return Response(
             {"error": "Validation error", "details": serializer.errors},
@@ -163,13 +163,10 @@ class UserProfileViewSet(ViewSet):
     )
     @action(detail=False, methods=["get"], url_path="profile")
     def myprofile(self, request):
-        """
-        Retrieve the authenticated user's profile.
-        """
         user = request.user
         serializer = UserProfileSerializer(user)
         return Response(serializer.data, status=status.HTTP_200_OK)
-
+    
     @swagger_auto_schema(
         operation_description="Fetch a specific user's profile by user_id",
         responses={200: UserProfileSerializer},
@@ -282,3 +279,46 @@ class UserProfileViewSet(ViewSet):
         return Response({
             "access_token": new_token.key,
         }, status=status.HTTP_200_OK)
+
+    @swagger_auto_schema(
+        operation_description="Partially update the authenticated user's profile (PATCH).",
+        request_body=UserProfileSerializer,
+        responses={200: "Profile updated successfully!", 400: "Validation error"},
+    )
+    def partial_update(self, request, *args, **kwargs):
+        """
+        PATCH /user-profile/profile/
+        Authenticated user updates their own profile.
+        """
+        user = request.user
+        serializer = UserProfileSerializer(user, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @swagger_auto_schema(
+        operation_description="Partially update a specific user's profile by user_id (PATCH).",
+        request_body=UserProfileSerializer,
+        responses={200: "Profile updated successfully!", 400: "Validation error", 404: "User not found."},
+        manual_parameters=[
+            openapi.Parameter(
+                "user_id",
+                openapi.IN_PATH,
+                description="The ID of the user to partially update the profile for.",
+                type=openapi.TYPE_INTEGER,
+                required=True,
+            )
+        ],
+    )
+    @action(detail=False, methods=["patch"], url_path="profile/(?P<user_id>[^/.]+)")
+    def partial_update_profile_by_id(self, request, user_id):
+        try:
+            user = User.objects.get(id=user_id)
+            serializer = UserProfileSerializer(user, data=request.data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data, status=status.HTTP_200_OK)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except User.DoesNotExist:
+            return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
