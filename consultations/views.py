@@ -9,12 +9,16 @@ from .models import Consultation
 from .serializers import ConsultationSerializer
 import uuid
 from django.utils import timezone
+import jwt
+import time
+from django.conf import settings
 
 # Create your views here.
 class ConsultationViewSet(ModelViewSet):
     queryset = Consultation.objects.all()
     serializer_class = ConsultationSerializer
     permission_classes = [IsAuthenticated]
+    lookup_field = "meeting_id"  # ✅ Tell DRF to use meeting_id in URLs
 
     def get_queryset(self):
         user = self.request.user
@@ -141,37 +145,27 @@ class ConsultationViewSet(ModelViewSet):
         )
 
 
-
     @action(detail=True, methods=["post"], url_path="accept")
-    def accept_consultation(self, request, pk=None):
-        """
-        Doctor accepts the consultation request.
-        """
+    def accept_consultation(self, request, meeting_id=None):
         user = request.user
         consultation = self.get_object()
-    
+
         if user.role != "doctor" or consultation.doctor != user:
             return Response({"error": "You are not authorized to accept this consultation."}, status=status.HTTP_403_FORBIDDEN)
-    
+
         consultation.status = "ongoing"
         consultation.started_at = timezone.now()
         consultation.save()
-    
-        return Response(
-            {
-                "message": "Consultation started!",
-                "meeting_id": consultation.meeting_id,  # ✅ Return meeting ID
-                "status": consultation.status
-            },
-            status=status.HTTP_200_OK,
-        )
+
+        return Response({
+            "message": "Consultation started!",
+            "meeting_id": consultation.meeting_id,
+            "status": consultation.status
+        }, status=status.HTTP_200_OK)
 
 
     @action(detail=True, methods=["post"], url_path="reject")
-    def reject_consultation(self, request, pk=None):
-        """
-        Doctor rejects the consultation request.
-        """
+    def reject_consultation(self, request, meeting_id=None):
         user = request.user
         consultation = self.get_object()
 
@@ -182,25 +176,22 @@ class ConsultationViewSet(ModelViewSet):
         consultation.save()
 
         return Response({"message": "Consultation rejected.", "status": consultation.status}, status=status.HTTP_200_OK)
-    
+
     # ✅ Notify the patient when doctor accepts the call
     @action(detail=True, methods=["post"], url_path="notify-patient")
-    def notify_patient(self, request, pk=None):
-        """
-        Notifies the patient that the doctor has accepted the call.
-        """
+    def notify_patient(self, request, meeting_id=None):
         consultation = self.get_object()
 
-        # ✅ Ensure only doctors can notify patients
         if request.user.role != "doctor":
             return Response({"error": "Permission denied"}, status=status.HTTP_403_FORBIDDEN)
 
-        # ✅ Update consultation status to 'ongoing'
         consultation.status = "ongoing"
         consultation.save()
 
-        # ✅ Notify the patient (Frontend should poll for status changes)
-        return Response({"message": "Patient notified", "meeting_id": consultation.meeting_id}, status=status.HTTP_200_OK)
+        return Response({
+            "message": "Patient notified",
+            "meeting_id": consultation.meeting_id
+        }, status=status.HTTP_200_OK)
 
     # ✅ API to check consultation status
     @action(detail=False, methods=["get"], url_path="status")
@@ -223,16 +214,12 @@ class ConsultationViewSet(ModelViewSet):
 
 
     @action(detail=True, methods=["post"], url_path="start-call")
-    def start_call(self, request, pk=None):
-        """
-        Doctor starts the video call.
-        """
+    def start_call(self, request, meeting_id=None):
         consultation = self.get_object()
 
         if consultation.status != "pending":
             return Response({"error": "Consultation is not in a valid state to start."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # ✅ Update consultation status
         consultation.status = "ongoing"
         consultation.started_at = timezone.now()
         consultation.save()
@@ -241,18 +228,48 @@ class ConsultationViewSet(ModelViewSet):
 
 
     @action(detail=True, methods=["post"], url_path="end-call")
-    def end_call(self, request, pk=None):
-        """
-        Ends a consultation and records the end time.
-        """
+    def end_call(self, request, meeting_id=None):
         consultation = self.get_object()
 
         if consultation.status != "ongoing":
             return Response({"error": "Consultation is not active or has already ended."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # ✅ Update consultation status
         consultation.status = "completed"
         consultation.ended_at = timezone.now()
         consultation.save()
 
         return Response({"message": "Call ended successfully!", "status": consultation.status}, status=status.HTTP_200_OK)
+
+
+
+    @action(detail=True, methods=["get"], url_path="video-token")
+    def get_livekit_video_token(self, request, meeting_id=None):
+        consultation = self.get_object()
+        user = request.user
+
+        if user != consultation.patient and user != consultation.doctor:
+            return Response({"error": "You are not part of this consultation."}, status=status.HTTP_403_FORBIDDEN)
+
+        room_name = consultation.meeting_id
+        identity = str(user.id)
+
+        payload = {
+            "jti": f"{identity}-{int(time.time())}",
+            "iss": settings.LIVEKIT_API_KEY,
+            "sub": "video",
+            "exp": int(time.time()) + 3600,
+            "nbf": int(time.time()),
+            "video": {
+                "roomJoin": True,
+                "room": room_name,
+            },
+        }
+
+        token = jwt.encode(payload, settings.LIVEKIT_API_SECRET, algorithm="HS256")
+
+        return Response({
+            "token": token,
+            "room": room_name,
+            "identity": identity,
+            "url": settings.LIVEKIT_URL,
+        })

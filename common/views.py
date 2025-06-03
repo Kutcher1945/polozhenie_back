@@ -89,10 +89,10 @@ class UserViewSet(ModelViewSet):
         try:
             user = User.objects.get(email=email)
         except User.DoesNotExist:
-            return Response({"error": "Invalid email or password."}, status=status.HTTP_401_UNAUTHORIZED)
+            return Response({"error": "Неправильный E-mail или пароль."}, status=status.HTTP_401_UNAUTHORIZED)
 
         if not user.check_password(password):
-            return Response({"error": "Invalid email or password."}, status=status.HTTP_401_UNAUTHORIZED)
+            return Response({"error": "Неправильный E-mail или пароль."}, status=status.HTTP_401_UNAUTHORIZED)
 
         if not user.is_active:
             return Response({"error": "Account is inactive. Please contact support."}, status=status.HTTP_403_FORBIDDEN)
@@ -279,6 +279,7 @@ class UserProfileViewSet(ViewSet):
         return Response({
             "access_token": new_token.key,
         }, status=status.HTTP_200_OK)
+
 
     @swagger_auto_schema(
         operation_description="Partially update the authenticated user's profile (PATCH).",

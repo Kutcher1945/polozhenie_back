@@ -169,6 +169,21 @@ DATABASES = {
     }
 }
 
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.contrib.gis.db.backends.postgis',
+#         'NAME': 'zhancare_db',
+#         'USER': 'zhancare',
+#         'PASSWORD': '4HPzQt2HyU',
+#         'HOST': 'localhost',
+#         'PORT': '5432',
+#     }
+# }
+
+LIVEKIT_URL="wss://zhancare-4yvomh3h.livekit.cloud"
+LIVEKIT_API_KEY="APIsH5RHgRW6vdD"
+LIVEKIT_API_SECRET="HRlbQpMWWHBzrxgAFReeVaTV0X3fA6UMO5uP4rdMp1hA"
+
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators
 
