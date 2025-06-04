@@ -177,6 +177,26 @@ class ConsultationViewSet(ModelViewSet):
 
         return Response({"message": "Consultation rejected.", "status": consultation.status}, status=status.HTTP_200_OK)
 
+    @action(detail=True, methods=["post"], url_path="mark-missed")
+    def mark_missed(self, request, meeting_id=None):
+        """
+        Automatically mark a consultation as 'missed' if doctor didn't respond.
+        Triggered by a frontend timeout or background task.
+        """
+        consultation = self.get_object()
+    
+        if consultation.status != "pending":
+            return Response({"error": "Only pending consultations can be marked as missed."}, status=status.HTTP_400_BAD_REQUEST)
+    
+        consultation.status = "missed"
+        consultation.ended_at = timezone.now()
+        consultation.save()
+    
+        return Response({
+            "message": "Consultation marked as missed.",
+            "status": consultation.status
+        }, status=status.HTTP_200_OK)
+
     # ✅ Notify the patient when doctor accepts the call
     @action(detail=True, methods=["post"], url_path="notify-patient")
     def notify_patient(self, request, meeting_id=None):

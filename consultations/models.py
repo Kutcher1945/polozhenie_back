@@ -9,8 +9,8 @@ class Consultation(BaseModel):
         ("ongoing", "В процессе"),
         ("completed", "Завершено"),
         ("cancelled", "Отменено"),
+        ("missed", "Пропущено"),  # ✅ Add this line
     ]
-
     patient = models.ForeignKey(
         "common.User", on_delete=models.CASCADE, related_name="consultations_as_patient", verbose_name="Пациент"
     )
