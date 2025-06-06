@@ -19,17 +19,8 @@ import re
 import json
 import random
 
+
 logger = logging.getLogger(__name__)
-SPECIALTY_SYNONYMS = {
-        "терапевт": ["терапевт", "врач общей практики"],
-        "терапевт или терапевт общей практики": ["терапевт", "врач общей практики"],
-        "кардиолог": ["кардиолог"],
-        "дерматолог": ["дерматолог"],
-        "офтальмолог": ["офтальмолог"],
-        "стоматолог": ["стоматолог"],
-        "педиатр": ["педиатр"],
-        # можно расширять при необходимости
-    }
 
 # Create your views here.
 class ConsultationViewSet(ModelViewSet):
@@ -314,12 +305,16 @@ class ConsultationViewSet(ModelViewSet):
 
     @action(detail=False, methods=["post"], url_path="ai-recommend")
     def ai_recommend_doctor(self, request):
+        import json
+        import random
+        import re
+    
         symptoms = request.data.get("symptoms")
         language = request.data.get("language", "ru")
-
+    
         if not symptoms:
             return Response({"error": "Symptoms are required."}, status=400)
-
+    
         prompt = {
             "ru": f"""Ты — медицинский ассистент. Пациент описал симптомы: "{symptoms}".
     Ответь строго в JSON-формате:
@@ -334,10 +329,10 @@ class ConsultationViewSet(ModelViewSet):
       "reason": "<түсіндіру>"
     }}"""
         }.get(language, "")
-
+    
         if not prompt:
             return Response({"error": "Unsupported language"}, status=400)
-
+    
         try:
             payload = {
                 "model": "open-mistral-nemo",
@@ -349,45 +344,43 @@ class ConsultationViewSet(ModelViewSet):
                     {"role": "user", "content": symptoms}
                 ],
             }
-
+    
             headers = {
                 "Authorization": f"Bearer {settings.MISTRAL_API_KEY}",
                 "Content-Type": "application/json"
             }
-
+    
+            logger.info("📡 Отправка в LLM")
             response = requests.post("https://api.mistral.ai/v1/chat/completions", json=payload, headers=headers)
             response.raise_for_status()
             reply_text = response.json()["choices"][0]["message"]["content"].strip()
-
+    
             logger.debug(f"🧠 Ответ AI: {reply_text}")
-
+    
             try:
                 ai_data = json.loads(reply_text)
-                specialty = ai_data["specialty"].strip().lower()
+                specialty_raw = ai_data["specialty"].strip().lower()
                 reason = ai_data["reason"].strip()
-            except (json.JSONDecodeError, KeyError):
+            except (json.JSONDecodeError, KeyError) as e:
                 logger.error("⚠️ Ошибка парсинга JSON")
                 return Response({"error": "Invalid AI response format", "raw": reply_text}, status=500)
-
-            # 🔍 Получаем список синонимов
-            synonyms = SPECIALTY_SYNONYMS.get(specialty, [specialty])
-
-            # 🔢 Получаем до 10 подходящих врачей
-            doctors_qs = User.objects.filter(
+    
+            # ✅ Убираем лишнее, оставляем только первую специализацию
+            specialty = re.split(r" или | и |,|/", specialty_raw)[0].strip()
+    
+            logger.info(f"🎯 AI выбрал специализацию: {specialty}")
+    
+            doctors = list(User.objects.filter(
                 role="doctor",
                 is_active=True,
-            ).filter(
-                doctor_type__iregex="(" + "|".join(map(re.escape, synonyms)) + ")"
-            )[:10]  # ← здесь ограничение по количеству
-
-            doctors = list(doctors_qs)
-
+                doctor_type__icontains=specialty
+            )[:10])
+    
             if not doctors:
                 return Response({"error": f"No doctor found for '{specialty}'"}, status=404)
-
-            # 🎲 Выбираем одного случайного врача
+    
             doctor = random.choice(doctors)
-
+    
             return Response({
                 "recommended_doctor": {
                     "id": doctor.id,
@@ -397,7 +390,7 @@ class ConsultationViewSet(ModelViewSet):
                     "reason": reason
                 }
             })
-
+    
         except requests.exceptions.RequestException:
             logger.exception("❌ Ошибка запроса к AI")
             return Response({"error": "LLM API unavailable"}, status=502)
