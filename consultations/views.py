@@ -13,11 +13,23 @@ import uuid
 from django.utils import timezone
 import jwt
 import time
+from django.core.cache import cache
 from django.conf import settings
 import re
-
+import json
+import random
 
 logger = logging.getLogger(__name__)
+SPECIALTY_SYNONYMS = {
+        "терапевт": ["терапевт", "врач общей практики"],
+        "терапевт или терапевт общей практики": ["терапевт", "врач общей практики"],
+        "кардиолог": ["кардиолог"],
+        "дерматолог": ["дерматолог"],
+        "офтальмолог": ["офтальмолог"],
+        "стоматолог": ["стоматолог"],
+        "педиатр": ["педиатр"],
+        # можно расширять при необходимости
+    }
 
 # Create your views here.
 class ConsultationViewSet(ModelViewSet):
@@ -302,125 +314,93 @@ class ConsultationViewSet(ModelViewSet):
 
     @action(detail=False, methods=["post"], url_path="ai-recommend")
     def ai_recommend_doctor(self, request):
-        logger.info("🔍 Получен запрос на AI-рекомендацию врача")
-    
         symptoms = request.data.get("symptoms")
         language = request.data.get("language", "ru")
-        logger.debug(f"📨 Симптомы: {symptoms}")
-        logger.debug(f"🌐 Язык: {language}")
-    
+
         if not symptoms:
-            logger.warning("⚠️ Не указаны симптомы")
-            return Response({"error": "Symptoms are required."}, status=status.HTTP_400_BAD_REQUEST)
-    
-        available_doctors = User.objects.filter(role="doctor", is_active=True)
-        if not available_doctors.exists():
-            logger.warning("❌ Нет доступных врачей")
-            return Response({"error": "No doctors available at the moment."}, status=status.HTTP_404_NOT_FOUND)
-    
-        doctor_list = [
-            f"{doc.first_name} {doc.last_name} ({doc.doctor_type})"
-            for doc in available_doctors
-        ]
-        logger.info(f"👨‍⚕️ Найдено {len(doctor_list)} врачей")
-    
+            return Response({"error": "Symptoms are required."}, status=400)
+
         prompt = {
-            "ru": f"""
-    Ты — опытный медицинский помощник. Пациент описывает симптомы: "{symptoms}".
-    Вот список доступных врачей: {doctor_list}.
-    
-    Выбери наиболее подходящего врача на основе симптомов. Ответь строго в формате:
-    
-    Имя Фамилия (Специализация). Причина: [Развернуто объясни, почему именно этот врач подходит. Свяжи симптомы с областью его специализации. Не упоминай ID].
-    
-    Пример:
-    Сергей Сердечный (Кардиолог). Причина: У пациента имеются жалобы на тахикардию, боли в груди и головокружение. Эти симптомы могут свидетельствовать о нарушении сердечного ритма, с чем работает кардиолог. Также наблюдается снижение энергии и тревожность, что может быть связано с сердечной недостаточностью.
-    """,
-            "kz": f"""
-    Сіз тәжірибелі медициналық көмекшісіз. Пациент мынадай белгілерді сипаттайды: "{symptoms}".
-    Міне қолжетімді дәрігерлердің тізімі: {doctor_list}.
-    
-    Симптомдарға сәйкес ең қолайлы дәрігерді таңдаңыз. Жауап форматы:
-    
-    Аты Жөні (Мамандығы). Себебі: [Мүмкіндігінше толық негіздеңіз. Симптомдарды дәрігердің мамандығымен байланыстырыңыз. ID көрсетпеңіз].
-    
-    Мысал:
-    Айдос Төлегенов (Кардиолог). Себебі: Пациент жүрек қағуы, кеудедегі ауырсыну және әлсіздікке шағымданады. Бұл белгілер жүрек жеткіліксіздігінің белгісі болуы мүмкін, және оны кардиолог емдейді.
-    """
+            "ru": f"""Ты — медицинский ассистент. Пациент описал симптомы: "{symptoms}".
+    Ответь строго в JSON-формате:
+    {{
+      "specialty": "<специализация>",
+      "reason": "<пояснение>"
+    }}""",
+            "kz": f"""Сіз медициналық көмекшісіз. Пациент белгілерді сипаттады: "{symptoms}".
+    Жауапты тек JSON форматында қайтарыңыз:
+    {{
+      "specialty": "<мамандық>",
+      "reason": "<түсіндіру>"
+    }}"""
         }.get(language, "")
-    
+
         if not prompt:
-            logger.error("❌ Некорректный язык. Поддерживаются только 'ru' и 'kz'")
-            return Response({"error": "Unsupported language."}, status=status.HTTP_400_BAD_REQUEST)
-    
+            return Response({"error": "Unsupported language"}, status=400)
+
         try:
             payload = {
                 "model": "open-mistral-nemo",
-                "temperature": 0.4,
+                "temperature": 0.3,
                 "top_p": 1,
-                "max_tokens": 600,
+                "max_tokens": 400,
                 "messages": [
                     {"role": "system", "content": prompt},
                     {"role": "user", "content": symptoms}
                 ],
             }
-    
+
             headers = {
                 "Authorization": f"Bearer {settings.MISTRAL_API_KEY}",
                 "Content-Type": "application/json"
             }
-    
-            logger.info("📡 Отправка запроса в Mistral API")
+
             response = requests.post("https://api.mistral.ai/v1/chat/completions", json=payload, headers=headers)
             response.raise_for_status()
-            ai_reply = response.json()["choices"][0]["message"]["content"].strip()
-            logger.debug(f"🤖 Ответ AI: {ai_reply}")
-    
-            # 📌 Извлекаем "Имя Фамилия (Специализация). Причина: ..."
-            match = re.match(r"(.+?)\s+\((.+?)\)\.?\s+Причина:\s*(.+)", ai_reply)
-            if not match:
-                logger.error("⚠️ Невозможно извлечь врача и причину из ответа AI")
-                return Response({"error": "AI returned unrecognized format."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    
-            full_name = match.group(1).strip()
-            doctor_type = match.group(2).strip()
-            reason = match.group(3).strip()
-    
-            name_parts = full_name.split()
-            if len(name_parts) < 2:
-                logger.error("❌ Недостаточно данных для поиска врача")
-                return Response({"error": "Could not determine doctor name."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    
-            first_name = name_parts[0]
-            last_name = name_parts[-1]
-    
-            matched_doctor = User.objects.filter(
+            reply_text = response.json()["choices"][0]["message"]["content"].strip()
+
+            logger.debug(f"🧠 Ответ AI: {reply_text}")
+
+            try:
+                ai_data = json.loads(reply_text)
+                specialty = ai_data["specialty"].strip().lower()
+                reason = ai_data["reason"].strip()
+            except (json.JSONDecodeError, KeyError):
+                logger.error("⚠️ Ошибка парсинга JSON")
+                return Response({"error": "Invalid AI response format", "raw": reply_text}, status=500)
+
+            # 🔍 Получаем список синонимов
+            synonyms = SPECIALTY_SYNONYMS.get(specialty, [specialty])
+
+            # 🔢 Получаем до 10 подходящих врачей
+            doctors_qs = User.objects.filter(
                 role="doctor",
                 is_active=True,
-                first_name__iexact=first_name,
-                last_name__iexact=last_name,
-                doctor_type__iexact=doctor_type
-            ).first()
-    
-            if not matched_doctor:
-                logger.error(f"❌ Врач '{full_name} ({doctor_type})' не найден")
-                return Response({"error": "AI suggested doctor not found."}, status=status.HTTP_404_NOT_FOUND)
-    
-            logger.info(f"🎯 Рекомендованный врач: {matched_doctor.first_name} {matched_doctor.last_name}")
+            ).filter(
+                doctor_type__iregex="(" + "|".join(map(re.escape, synonyms)) + ")"
+            )[:10]  # ← здесь ограничение по количеству
+
+            doctors = list(doctors_qs)
+
+            if not doctors:
+                return Response({"error": f"No doctor found for '{specialty}'"}, status=404)
+
+            # 🎲 Выбираем одного случайного врача
+            doctor = random.choice(doctors)
+
             return Response({
                 "recommended_doctor": {
-                    "id": matched_doctor.id,
-                    "name": f"{matched_doctor.first_name} {matched_doctor.last_name}",
-                    "doctor_type": matched_doctor.doctor_type,
-                    "email": matched_doctor.email,
+                    "id": doctor.id,
+                    "name": f"{doctor.first_name} {doctor.last_name}",
+                    "doctor_type": doctor.doctor_type,
+                    "email": doctor.email,
                     "reason": reason
                 }
             })
-    
+
         except requests.exceptions.RequestException:
-            logger.exception("📡 Ошибка при обращении к Mistral API")
-            return Response({"error": "Failed to connect to AI API."}, status=status.HTTP_502_BAD_GATEWAY)
-    
-        except Exception:
+            logger.exception("❌ Ошибка запроса к AI")
+            return Response({"error": "LLM API unavailable"}, status=502)
+        except Exception as e:
             logger.exception("🔥 Непредвиденная ошибка")
-            return Response({"error": "AI error or failed to parse result."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({"error": str(e)}, status=500)
