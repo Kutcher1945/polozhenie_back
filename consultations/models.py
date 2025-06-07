@@ -2,7 +2,7 @@ from django.db import models
 from django.utils import timezone
 from common.models import BaseModel
 
-# Create your models here.
+
 class Consultation(BaseModel):
     STATUS_CHOICES = [
         ("pending", "Ожидание"),
@@ -43,3 +43,29 @@ class Consultation(BaseModel):
         db_table = "consultations"
         verbose_name = "Консультация"
         verbose_name_plural = "Консультации"
+
+
+class AIRecommendationLog(BaseModel):
+    symptoms = models.TextField(verbose_name="Симптомы запроса")
+    ai_raw_response = models.TextField(verbose_name="Сырой ответ AI")
+    recommended_specialty = models.CharField(
+        max_length=255, verbose_name="Рекомендованная специализация", null=True, blank=True
+    )
+    reason = models.TextField(verbose_name="Пояснение AI", null=True, blank=True)
+    matched_doctor = models.ForeignKey(
+        "common.User", on_delete=models.SET_NULL, null=True, blank=True,
+        verbose_name="Назначенный врач", related_name="ai_matches"
+    )
+    fallback_used = models.BooleanField(default=False, verbose_name="Использован fallback (терапевт)?")
+    specialty_not_found = models.CharField(
+        max_length=255, null=True, blank=True, verbose_name="Найденная AI специализация, но врач не найден"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"AI рекомендация: {self.recommended_specialty or 'не распознано'} ({self.created_at:%Y-%m-%d %H:%M})"
+
+    class Meta:
+        db_table = "consultations_ai_recommendation_logs"
+        verbose_name = "Лог AI-рекомендации"
+        verbose_name_plural = "Логи AI-рекомендаций"
