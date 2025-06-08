@@ -307,10 +307,10 @@ class ConsultationViewSet(ModelViewSet):
     def ai_recommend_doctor(self, request):
         symptoms = request.data.get("symptoms")
         language = request.data.get("language", "ru")
-
+    
         if not symptoms:
-            return Response({"error": "Symptoms are required."}, status=400)
-
+            return Response({"success": False, "error": "Symptoms are required."}, status=400)
+    
         prompt = {
             "ru": f"""Ты — медицинский ассистент. Пациент описал симптомы: "{symptoms}".
     Ответь строго в JSON-формате:
@@ -325,10 +325,10 @@ class ConsultationViewSet(ModelViewSet):
       "reason": "<түсіндіру>"
     }}"""
         }.get(language, "")
-
+    
         if not prompt:
-            return Response({"error": "Unsupported language"}, status=400)
-
+            return Response({"success": False, "error": "Unsupported language"}, status=400)
+    
         try:
             payload = {
                 "model": "open-mistral-nemo",
@@ -340,19 +340,19 @@ class ConsultationViewSet(ModelViewSet):
                     {"role": "user", "content": symptoms}
                 ],
             }
-
+    
             headers = {
                 "Authorization": f"Bearer {settings.MISTRAL_API_KEY}",
                 "Content-Type": "application/json"
             }
-
+    
             logger.info("📡 Отправка в LLM")
             response = requests.post("https://api.mistral.ai/v1/chat/completions", json=payload, headers=headers)
             response.raise_for_status()
             reply_text = response.json()["choices"][0]["message"]["content"].strip()
-
+    
             logger.debug(f"🧠 Ответ AI:\n{reply_text}")
-
+    
             try:
                 ai_data = json.loads(reply_text)
                 specialty_raw = ai_data["specialty"].strip().lower()
@@ -360,23 +360,21 @@ class ConsultationViewSet(ModelViewSet):
             except (json.JSONDecodeError, KeyError) as e:
                 logger.error("⚠️ Ошибка парсинга JSON")
                 logger.warning(f"📥 Сырой ответ от AI:\n{reply_text}")
-                return Response({"error": "Invalid AI response format", "raw": reply_text}, status=500)
-
-            # ✅ Оставляем только первую специализацию
+                return Response({"success": False, "error": "Invalid AI response format", "raw": reply_text}, status=200)
+    
             specialty = re.split(r" или | и |,|/", specialty_raw)[0].strip()
             logger.info(f"🎯 AI выбрал специализацию: {specialty}")
-
+    
             doctors = list(User.objects.filter(
                 role="doctor",
                 is_active=True,
                 doctor_type__icontains=specialty
             )[:10])
-
+    
             if not doctors:
                 logger.warning(f"❌ Не найден врач по специализации '{specialty}'")
                 logger.warning(f"📨 Ответ от AI: {reply_text}")
-
-                # 🔥 Запись в лог с отсутствием врача
+    
                 AIRecommendationLog.objects.create(
                     symptoms=symptoms,
                     ai_raw_response=reply_text,
@@ -386,16 +384,21 @@ class ConsultationViewSet(ModelViewSet):
                     fallback_used=False,
                     specialty_not_found=specialty
                 )
-
+    
                 return Response({
+                    "success": False,
                     "error": f"No doctor found for '{specialty}'",
-                    "ai_response": reply_text
-                }, status=404)
-
+                    "fallback_used": False,
+                    "ai_data": {
+                        "specialty": specialty,
+                        "reason": reason,
+                        "raw": reply_text
+                    }
+                }, status=200)
+    
             doctor = random.choice(doctors)
             logger.info(f"👨‍⚕️ Назначен врач: {doctor.first_name} {doctor.last_name} ({doctor.doctor_type})")
-
-            # ✅ Лог успешной рекомендации
+    
             AIRecommendationLog.objects.create(
                 symptoms=symptoms,
                 ai_raw_response=reply_text,
@@ -404,8 +407,9 @@ class ConsultationViewSet(ModelViewSet):
                 matched_doctor=doctor,
                 fallback_used=False
             )
-
+    
             return Response({
+                "success": True,
                 "recommended_doctor": {
                     "id": doctor.id,
                     "name": f"{doctor.first_name} {doctor.last_name}",
@@ -414,11 +418,13 @@ class ConsultationViewSet(ModelViewSet):
                     "reason": reason
                 }
             })
-
+    
         except requests.exceptions.RequestException:
             logger.exception("❌ Ошибка запроса к AI")
-            return Response({"error": "LLM API unavailable"}, status=502)
+            return Response({"success": False, "error": "LLM API unavailable"}, status=502)
+    
         except Exception as e:
             logger.exception("🔥 Непредвиденная ошибка")
-            return Response({"error": str(e)}, status=500)
+            return Response({"success": False, "error": str(e)}, status=500)
+
 
