@@ -1,5 +1,9 @@
 import logging
 from drf_yasg import openapi
+from django.conf import settings
+from django.utils import timezone
+import random
+import string
 from rest_framework.viewsets import ModelViewSet, ViewSet
 from rest_framework.response import Response
 from rest_framework.decorators import action
@@ -10,6 +14,7 @@ from django.contrib.auth.hashers import make_password
 from .models import User, CustomToken
 from .serializers import UserSerializer, UserProfileSerializer
 from .permissions import IsDoctor, IsAdmin
+from .utils.email_utils import send_password_reset_email
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +121,101 @@ class UserViewSet(ModelViewSet):
             },
             status=status.HTTP_200_OK,
         )
+
+    @swagger_auto_schema(
+    operation_description="Send password reset link or code to user's email",
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        required=["email"],
+        properties={
+            "email": openapi.Schema(type=openapi.TYPE_STRING, description="User's email"),
+        },
+    ),
+    responses={
+        200: "Password reset instructions sent",
+        404: "User not found",
+    },
+    )
+    @action(detail=False, methods=["post"], url_path="forgot-password")
+    def forgot_password(self, request):
+        email = request.data.get("email", "").strip().lower()
+
+        try:
+            user = User.objects.get(email=email)
+            print(f"Found user for password reset: {user}")
+
+            # Generate a reset code and timestamp
+            reset_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+            user.reset_code = reset_code
+            user.reset_code_created_at = timezone.now()  # you need to add this field in the model
+            user.save()
+
+            # 🔥 Use HTML email helper instead of raw send_mail
+            send_password_reset_email(email, reset_code)
+
+            return Response(
+                {"message": "Password reset instructions sent to your email."},
+                status=status.HTTP_200_OK,
+            )
+        except User.DoesNotExist:
+            return Response(
+                {"error": "User with this email does not exist."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+    @swagger_auto_schema(
+    operation_description="Reset password using reset code",
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        required=["email", "reset_code", "new_password"],
+        properties={
+            "email": openapi.Schema(type=openapi.TYPE_STRING),
+            "reset_code": openapi.Schema(type=openapi.TYPE_STRING),
+            "new_password": openapi.Schema(type=openapi.TYPE_STRING),
+        },
+    ),
+    responses={200: "Password updated successfully"},
+    )
+    @action(detail=False, methods=["post"], url_path="reset-password")
+    def reset_password(self, request):
+        email = request.data.get("email", "").strip().lower()
+        reset_code = request.data.get("reset_code", "").strip()
+        new_password = request.data.get("new_password", "").strip()
+    
+        # 🔍 Debug incoming data
+        print("📥 Incoming reset password request:")
+        print("Email:", email)
+        print("Reset Code:", reset_code)
+        print("New Password (len):", len(new_password))
+    
+        if not email or not reset_code or not new_password:
+            print("❌ Missing fields in request.")
+            return Response({"error": "Все поля обязательны."}, status=status.HTTP_400_BAD_REQUEST)
+    
+        try:
+            # ✅ Use case-insensitive matching for reset_code
+            user = User.objects.get(email=email, reset_code__iexact=reset_code)
+            print("✅ User found:", user.email)
+    
+            if user.reset_code_created_at:
+                print("🕓 Code created at:", user.reset_code_created_at)
+                print("🕓 Now:", timezone.now())
+    
+                if user.reset_code_created_at < timezone.now() - timezone.timedelta(minutes=15):
+                    print("❌ Reset code expired.")
+                    return Response({"error": "Код сброса истёк. Запросите новый."}, status=status.HTTP_400_BAD_REQUEST)
+    
+            user.set_password(new_password)
+            user.reset_code = None
+            user.reset_code_created_at = None
+            user.save()
+    
+            print("✅ Password reset successfully for", email)
+            return Response({"message": "Пароль успешно обновлён."}, status=status.HTTP_200_OK)
+    
+        except User.DoesNotExist:
+            print("❌ No user found with matching email and code.")
+            return Response({"error": "Неверный код или email."}, status=status.HTTP_400_BAD_REQUEST)
 
 
     @swagger_auto_schema(operation_description="Doctor Dashboard")

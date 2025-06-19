@@ -35,7 +35,9 @@ class User(BaseModel):
     password = models.CharField(max_length=255, verbose_name="Пароль")  # ✅ Must store hashed passwords!
     first_name = models.CharField(max_length=150, null=True, blank=True, verbose_name="Имя")
     last_name = models.CharField(max_length=150, null=True, blank=True, verbose_name="Фамилия")
-    is_active = models.BooleanField(default=True, verbose_name="Активен")\
+    is_active = models.BooleanField(default=True, verbose_name="Активен")
+    reset_code = models.CharField(max_length=10, blank=True, null=True)
+    reset_code_created_at = models.DateTimeField(null=True, blank=True) 
     # 🔧 Добавь вот это:
     is_staff = models.BooleanField(default=False, verbose_name="Сотрудник")
     is_superuser = models.BooleanField(default=False, verbose_name="Суперпользователь")

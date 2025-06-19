@@ -232,3 +232,12 @@ STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.yandex.ru'
+EMAIL_PORT = 465
+EMAIL_USE_SSL = True
+EMAIL_HOST_USER = 'marzipan9256@yandex.com'
+EMAIL_HOST_PASSWORD = 'deecnwsrkvczrcqf'
+DEFAULT_FROM_EMAIL = 'ZhanCare.Ai <marzipan9256@yandex.com>'
