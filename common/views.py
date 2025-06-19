@@ -164,6 +164,41 @@ class UserViewSet(ModelViewSet):
             )
 
     @swagger_auto_schema(
+    operation_description="Verify reset code sent to user's email",
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        required=["email", "reset_code"],
+        properties={
+            "email": openapi.Schema(type=openapi.TYPE_STRING),
+            "reset_code": openapi.Schema(type=openapi.TYPE_STRING),
+        },
+    ),
+    responses={
+        200: "Code is valid",
+        400: "Invalid or expired code",
+    },
+    )
+    @action(detail=False, methods=["post"], url_path="verify-reset-code")
+    def verify_reset_code(self, request):
+        email = request.data.get("email", "").strip().lower()
+        reset_code = request.data.get("reset_code", "").strip().upper()
+    
+        if not email or not reset_code:
+            return Response({"error": "Email и код обязательны."}, status=status.HTTP_400_BAD_REQUEST)
+    
+        try:
+            user = User.objects.get(email=email, reset_code__iexact=reset_code)
+    
+            if user.reset_code_created_at and user.reset_code_created_at < timezone.now() - timezone.timedelta(minutes=15):
+                return Response({"error": "Код сброса истёк. Запросите новый."}, status=status.HTTP_400_BAD_REQUEST)
+    
+            return Response({"message": "Код подтверждён."}, status=status.HTTP_200_OK)
+    
+        except User.DoesNotExist:
+            return Response({"error": "Неверный код или email."}, status=status.HTTP_400_BAD_REQUEST)
+    
+
+    @swagger_auto_schema(
     operation_description="Reset password using reset code",
     request_body=openapi.Schema(
         type=openapi.TYPE_OBJECT,
@@ -181,38 +216,38 @@ class UserViewSet(ModelViewSet):
         email = request.data.get("email", "").strip().lower()
         reset_code = request.data.get("reset_code", "").strip()
         new_password = request.data.get("new_password", "").strip()
-    
+
         # 🔍 Debug incoming data
         print("📥 Incoming reset password request:")
         print("Email:", email)
         print("Reset Code:", reset_code)
         print("New Password (len):", len(new_password))
-    
+
         if not email or not reset_code or not new_password:
             print("❌ Missing fields in request.")
             return Response({"error": "Все поля обязательны."}, status=status.HTTP_400_BAD_REQUEST)
-    
+
         try:
             # ✅ Use case-insensitive matching for reset_code
             user = User.objects.get(email=email, reset_code__iexact=reset_code)
             print("✅ User found:", user.email)
-    
+
             if user.reset_code_created_at:
                 print("🕓 Code created at:", user.reset_code_created_at)
                 print("🕓 Now:", timezone.now())
-    
+
                 if user.reset_code_created_at < timezone.now() - timezone.timedelta(minutes=15):
                     print("❌ Reset code expired.")
                     return Response({"error": "Код сброса истёк. Запросите новый."}, status=status.HTTP_400_BAD_REQUEST)
-    
+
             user.set_password(new_password)
             user.reset_code = None
             user.reset_code_created_at = None
             user.save()
-    
+
             print("✅ Password reset successfully for", email)
             return Response({"message": "Пароль успешно обновлён."}, status=status.HTTP_200_OK)
-    
+
         except User.DoesNotExist:
             print("❌ No user found with matching email and code.")
             return Response({"error": "Неверный код или email."}, status=status.HTTP_400_BAD_REQUEST)
