@@ -18,6 +18,7 @@ from django.conf import settings
 import re
 import json
 import random
+from livekit.api import AccessToken, VideoGrants
 
 
 logger = logging.getLogger(__name__)
@@ -274,40 +275,21 @@ class ConsultationViewSet(ModelViewSet):
     def get_livekit_video_token(self, request, meeting_id=None):
         consultation = self.get_object()
         user = request.user
-
-        if user != consultation.patient and user != consultation.doctor:
-            return Response({"error": "You are not part of this consultation."}, status=status.HTTP_403_FORBIDDEN)
-
-        room_name = consultation.meeting_id
-
-        # ✅ Accept identity from frontend or generate fallback
+        if user not in (consultation.patient, consultation.doctor):
+            return Response({"error": "Not allowed"}, status=403)
+    
+        room = consultation.meeting_id
         identity = request.query_params.get(
             "identity",
             f"{user.role}-{user.id}-{uuid.uuid4().hex[:6]}"
         )
-
-        logger.info(f"🎫 Generating token for identity: {identity} in room: {room_name}")
-
-        payload = {
-            "jti": f"{identity}-{int(time.time())}",
-            "iss": settings.LIVEKIT_API_KEY,
-            "sub": "video",
-            "exp": int(time.time()) + 3600,
-            "nbf": int(time.time()),
-            "video": {
-                "roomJoin": True,
-                "room": room_name,
-            },
-        }
-
-        token = jwt.encode(payload, settings.LIVEKIT_API_SECRET, algorithm="HS256")
-
-        return Response({
-            "token": token,
-            "room": room_name,
-            "identity": identity,
-            "url": settings.LIVEKIT_URL,
-        })
+    
+        token = (AccessToken(settings.LIVEKIT_API_KEY, settings.LIVEKIT_API_SECRET)
+                 .with_identity(identity)
+                 .with_grants(VideoGrants(room_join=True, room=room, can_publish=True, can_subscribe=True))
+                 .to_jwt())
+    
+        return Response({"token": token, "url": settings.LIVEKIT_URL, "identity": identity})
 
 
     @action(detail=False, methods=["post"], url_path="ai-recommend")

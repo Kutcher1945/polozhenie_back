@@ -31,3 +31,4 @@ daphne
 pyOpenSSL
 cryptography
 drf-spectacular
+livekit-api
