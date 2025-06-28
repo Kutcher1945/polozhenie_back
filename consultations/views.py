@@ -270,7 +270,6 @@ class ConsultationViewSet(ModelViewSet):
         return Response({"message": "Call ended successfully!", "status": consultation.status}, status=status.HTTP_200_OK)
 
 
-
     @action(detail=True, methods=["get"], url_path="video-token")
     def get_livekit_video_token(self, request, meeting_id=None):
         consultation = self.get_object()
@@ -280,7 +279,14 @@ class ConsultationViewSet(ModelViewSet):
             return Response({"error": "You are not part of this consultation."}, status=status.HTTP_403_FORBIDDEN)
 
         room_name = consultation.meeting_id
-        identity = str(user.id)
+
+        # ✅ Accept identity from frontend or generate fallback
+        identity = request.query_params.get(
+            "identity",
+            f"{user.role}-{user.id}-{uuid.uuid4().hex[:6]}"
+        )
+
+        logger.info(f"🎫 Generating token for identity: {identity} in room: {room_name}")
 
         payload = {
             "jti": f"{identity}-{int(time.time())}",
@@ -302,6 +308,7 @@ class ConsultationViewSet(ModelViewSet):
             "identity": identity,
             "url": settings.LIVEKIT_URL,
         })
+
 
     @action(detail=False, methods=["post"], url_path="ai-recommend")
     def ai_recommend_doctor(self, request):
