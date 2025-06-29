@@ -55,7 +55,7 @@ def send_password_reset_email(email, code, reset_link=None):
             Если вы не отправляли этот запрос, проигнорируйте это письмо.
           </p>
           <p style="font-size: 14px; color: #666; line-height: 1.5; margin-top: 30px;">
-            Нужна помощь? Свяжитесь с нами: <a href="mailto:support@zhancare.ai" style="color: #002762;">support@zhancare.ai</a>
+            Нужна помощь? Свяжитесь с нами: <a href="mailto:support@zhancare.ai" style="color: #002762;">marzipan9256@yandex.com</a>
           </p>
         </div>
 
