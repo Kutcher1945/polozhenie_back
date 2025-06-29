@@ -1,6 +1,7 @@
 from django.core.mail import EmailMultiAlternatives
+from email.mime.image import MIMEImage
 from django.conf import settings
-
+import os
 
 def send_password_reset_email(email, code):
     subject = "🔐 Восстановление пароля – ZhanCare.Ai"
@@ -10,6 +11,7 @@ def send_password_reset_email(email, code):
     <div style="font-family: Arial, sans-serif; background-color: #f5f7fa; padding: 20px;">
         <div style="max-width: 500px; margin: auto; background-color: #ffffff; border-radius: 12px; padding: 30px; box-shadow: 0 4px 12px rgba(0,0,0,0.08);">
             <div style="text-align: center; margin-bottom: 20px;">
+                <img src="cid:logo" alt="ZhanCare.Ai Logo" style="max-width: 120px; margin-bottom: 20px;" />
                 <div style="font-size: 28px; font-weight: bold; color: #002762;">CSTI SAMGAU</div>
                 <h2 style="color: #002762; margin-top: 10px;">Восстановление пароля</h2>
             </div>
@@ -32,6 +34,19 @@ def send_password_reset_email(email, code):
     </div>
     """
 
+    # Create the email message
     msg = EmailMultiAlternatives(subject, text_content, settings.DEFAULT_FROM_EMAIL, [email])
     msg.attach_alternative(html_content, "text/html")
+
+    # Path to your logo
+    logo_path = os.path.join(settings.BASE_DIR, 'static', 'img', 'logosaas.png')
+
+    # Attach image if file exists
+    if os.path.exists(logo_path):
+        with open(logo_path, 'rb') as f:
+            logo = MIMEImage(f.read())
+            logo.add_header('Content-ID', '<logo>')  # matches src="cid:logo"
+            logo.add_header('Content-Disposition', 'inline', filename='logosaas.png')
+            msg.attach(logo)
+
     msg.send()
