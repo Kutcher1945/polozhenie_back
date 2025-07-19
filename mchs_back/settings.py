@@ -52,6 +52,8 @@ INSTALLED_APPS = [
     "consultations",
 ]
 
+
+
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",  # Add this at the top
     "django.middleware.security.SecurityMiddleware",

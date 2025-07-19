@@ -7,6 +7,6 @@ router.register(r'auth', UserViewSet, basename='user')
 router.register(r'user-profile', UserProfileViewSet, basename='user-profile')
 
 urlpatterns = [
-    path('csrf-cookie/', csrf_cookie_view, name='csrf-cookie'),  # ✅ Explicit CSRF cookie route
+    path('auth/csrf/', csrf_cookie_view, name='csrf-cookie'),  # 👈 consistent with /auth/ prefix
     path('', include(router.urls)),
 ]
