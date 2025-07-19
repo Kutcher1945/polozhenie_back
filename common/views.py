@@ -15,8 +15,14 @@ from .models import User, CustomToken
 from .serializers import UserSerializer, UserProfileSerializer
 from .permissions import IsDoctor, IsAdmin
 from .utils.email_utils import send_password_reset_email
+from django.views.decorators.csrf import ensure_csrf_cookie
+from django.http import JsonResponse
 
 logger = logging.getLogger(__name__)
+
+@ensure_csrf_cookie
+def csrf_cookie_view(request):
+    return JsonResponse({"message": "CSRF cookie set"})
 
 class UserViewSet(ModelViewSet):
     queryset = User.objects.all()

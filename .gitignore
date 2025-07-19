@@ -18,7 +18,6 @@ venv/
 *.sqlite3
 /media
 /staticfiles
-/static
 /env/
 db.sqlite3
 instance/
