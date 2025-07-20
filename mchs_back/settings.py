@@ -52,7 +52,7 @@ INSTALLED_APPS = [
     "consultations",
 ]
 
-
+APPEND_SLASH = False  # Disable appending slashes to URLs
 
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",  # Add this at the top
