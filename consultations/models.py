@@ -9,8 +9,9 @@ class Consultation(BaseModel):
         ("ongoing", "В процессе"),
         ("completed", "Завершено"),
         ("cancelled", "Отменено"),
-        ("missed", "Пропущено"),  # ✅ Add this line
+        ("missed", "Пропущено"),
     ]
+    
     patient = models.ForeignKey(
         "common.User", on_delete=models.CASCADE, related_name="consultations_as_patient", verbose_name="Пациент"
     )
@@ -21,6 +22,7 @@ class Consultation(BaseModel):
     status = models.CharField(
         max_length=10, choices=STATUS_CHOICES, default="pending", verbose_name="Статус"
     )
+    is_urgent = models.BooleanField(default=False, verbose_name="Экстренность консультации")
     started_at = models.DateTimeField(null=True, blank=True, verbose_name="Время начала")
     ended_at = models.DateTimeField(null=True, blank=True, verbose_name="Время завершения")
 
@@ -37,7 +39,7 @@ class Consultation(BaseModel):
         self.save()
 
     def __str__(self):
-        return f"Видеозвонок {self.patient} с {self.doctor} - {self.get_status_display()}"
+        return f"Видеозвонок {self.patient} с {self.doctor} - {self.get_status_display()} - {'Экстренная' if self.is_urgent else 'Не экстренная'}"
 
     class Meta:
         db_table = "consultations"
@@ -60,6 +62,10 @@ class AIRecommendationLog(BaseModel):
     specialty_not_found = models.CharField(
         max_length=255, null=True, blank=True, verbose_name="Найденная AI специализация, но врач не найден"
     )
+    urgency = models.CharField(
+        max_length=10, choices=[("urgent", "Экстренная"), ("non_urgent", "Не экстренная")],
+        default="non_urgent", verbose_name="Экстренность рекомендации AI"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -69,3 +75,4 @@ class AIRecommendationLog(BaseModel):
         db_table = "consultations_ai_recommendation_logs"
         verbose_name = "Лог AI-рекомендации"
         verbose_name_plural = "Логи AI-рекомендаций"
+

@@ -296,10 +296,13 @@ class ConsultationViewSet(ModelViewSet):
     def ai_recommend_doctor(self, request):
         symptoms = request.data.get("symptoms")
         language = request.data.get("language", "ru")
-    
+        
         if not symptoms:
             return Response({"success": False, "error": "Symptoms are required."}, status=400)
-    
+        
+        # Debugging: Print the symptoms
+        print(f"Symptoms received: {symptoms}")
+        
         # Prompt for the specialty (always in Russian)
         specialty_prompt = f"""
         You are a medical assistant. The patient described the symptoms: "{symptoms}". 
@@ -314,7 +317,7 @@ class ConsultationViewSet(ModelViewSet):
         }}
         """
     
-        # Prompt for the reason (in the user's language)
+        # Prompt for the reason (in the user's language) with possible urgency check
         reason_prompt = f"""
         You are a medical assistant. The patient described the symptoms: "{symptoms}". 
         Please provide a detailed explanation of the possible causes, symptoms, and recommendations for treatment or referral to a doctor.
@@ -328,6 +331,20 @@ class ConsultationViewSet(ModelViewSet):
     
         {{
           "reason": "<detailed_explanation_in_user_language>"
+        }}
+        """
+    
+        # Third prompt for urgency, separate from the reason
+        urgency_prompt = f"""
+        You are a medical assistant. The patient described the symptoms: "{symptoms}". 
+        Please evaluate the urgency of the condition.
+    
+        1. If the condition is **urgent**, recommend immediate care or emergency services.
+        2. If the condition is **non-urgent**, suggest scheduling an appointment.
+        3. Your answer should strictly follow this JSON structure:
+    
+        {{
+          "urgency": "<urgent_or_non_urgent>"
         }}
         """
     
@@ -356,6 +373,18 @@ class ConsultationViewSet(ModelViewSet):
                 ],
             }
     
+            # Get response for urgency
+            urgency_payload = {
+                "model": "open-mistral-nemo",
+                "temperature": 0.3,
+                "top_p": 1,
+                "max_tokens": 400,
+                "messages": [
+                    {"role": "system", "content": urgency_prompt},
+                    {"role": "user", "content": symptoms}
+                ],
+            }
+    
             headers = {
                 "Authorization": f"Bearer {settings.MISTRAL_API_KEY}",
                 "Content-Type": "application/json"
@@ -363,32 +392,47 @@ class ConsultationViewSet(ModelViewSet):
     
             logger.info("📡 Отправка в LLM")
     
-            # Send requests for both prompts (specialty and reason)
+            # Send requests for specialty, reason, and urgency
             specialty_response = requests.post("https://api.mistral.ai/v1/chat/completions", json=specialty_payload, headers=headers)
             reason_response = requests.post("https://api.mistral.ai/v1/chat/completions", json=reason_payload, headers=headers)
+            urgency_response = requests.post("https://api.mistral.ai/v1/chat/completions", json=urgency_payload, headers=headers)
     
             specialty_response.raise_for_status()
             reason_response.raise_for_status()
+            urgency_response.raise_for_status()
     
             specialty_reply = specialty_response.json()["choices"][0]["message"]["content"].strip()
             reason_reply = reason_response.json()["choices"][0]["message"]["content"].strip()
+            urgency_reply = urgency_response.json()["choices"][0]["message"]["content"].strip()
+    
+            # Debugging: Print the raw responses
+            print("Specialty Response:", specialty_reply)
+            print("Reason Response:", reason_reply)
+            print("Urgency Response:", urgency_reply)
     
             logger.debug(f"🧠 Ответ AI для специализации:\n{specialty_reply}")
             logger.debug(f"🧠 Ответ AI для пояснения:\n{reason_reply}")
+            logger.debug(f"🧠 Ответ AI для экстренности:\n{urgency_reply}")
     
             try:
                 # Parse the JSON responses
                 specialty_data = json.loads(specialty_reply)
                 reason_data = json.loads(reason_reply)
+                urgency_data = json.loads(urgency_reply)
     
                 specialty = specialty_data["specialty"].strip().lower()
                 reason = reason_data["reason"].strip()
+                urgency = urgency_data["urgency"].strip()  # Extract urgency from the urgency response
+    
+                # Debugging: Print urgency value
+                print(f"Urgency value extracted from AI: {urgency}")
     
             except (json.JSONDecodeError, KeyError) as e:
                 logger.error("⚠️ Ошибка парсинга JSON")
                 logger.warning(f"📥 Сырой ответ от AI (specialty):\n{specialty_reply}")
                 logger.warning(f"📥 Сырой ответ от AI (reason):\n{reason_reply}")
-                return Response({"success": False, "error": "Invalid AI response format", "raw_specialty": specialty_reply, "raw_reason": reason_reply}, status=200)
+                logger.warning(f"📥 Сырой ответ от AI (urgency):\n{urgency_reply}")
+                return Response({"success": False, "error": "Invalid AI response format", "raw_specialty": specialty_reply, "raw_reason": reason_reply, "raw_urgency": urgency_reply}, status=200)
     
             # Query doctors based on the specialty (in Russian)
             doctors = list(User.objects.filter(
@@ -401,15 +445,17 @@ class ConsultationViewSet(ModelViewSet):
                 logger.warning(f"❌ Не найден врач по специализации '{specialty}'")
                 logger.warning(f"📨 Ответ от AI (specialty): {specialty_reply}")
                 logger.warning(f"📨 Ответ от AI (reason): {reason_reply}")
+                logger.warning(f"📨 Ответ от AI (urgency): {urgency_reply}")
     
                 AIRecommendationLog.objects.create(
                     symptoms=symptoms,
-                    ai_raw_response={"specialty": specialty_reply, "reason": reason_reply},
+                    ai_raw_response={"specialty": specialty_reply, "reason": reason_reply, "urgency": urgency_reply},
                     recommended_specialty=specialty,
                     reason=reason,
                     matched_doctor=None,
                     fallback_used=False,
-                    specialty_not_found=specialty
+                    specialty_not_found=specialty,
+                    urgency=urgency  # Store urgency level in the log
                 )
     
                 return Response({
@@ -419,8 +465,10 @@ class ConsultationViewSet(ModelViewSet):
                     "ai_data": {
                         "specialty": specialty,
                         "reason": reason,
+                        "urgency": urgency,  # Include urgency in the response
                         "raw_specialty": specialty_reply,
-                        "raw_reason": reason_reply
+                        "raw_reason": reason_reply,
+                        "raw_urgency": urgency_reply
                     }
                 }, status=200)
     
@@ -430,11 +478,12 @@ class ConsultationViewSet(ModelViewSet):
     
             AIRecommendationLog.objects.create(
                 symptoms=symptoms,
-                ai_raw_response={"specialty": specialty_reply, "reason": reason_reply},
+                ai_raw_response={"specialty": specialty_reply, "reason": reason_reply, "urgency": urgency_reply},
                 recommended_specialty=specialty,
                 reason=reason,
                 matched_doctor=doctor,
-                fallback_used=False
+                fallback_used=False,
+                urgency=urgency  # Store urgency level in the log
             )
     
             return Response({
@@ -444,7 +493,8 @@ class ConsultationViewSet(ModelViewSet):
                     "name": f"{doctor.first_name} {doctor.last_name}",
                     "doctor_specialization": doctor.doctor_specialization.name_ru,
                     "email": doctor.email,
-                    "reason": reason
+                    "reason": reason,
+                    "urgency": urgency  # Include urgency in the response
                 }
             })
     
