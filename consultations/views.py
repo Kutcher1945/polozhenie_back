@@ -300,32 +300,58 @@ class ConsultationViewSet(ModelViewSet):
         if not symptoms:
             return Response({"success": False, "error": "Symptoms are required."}, status=400)
     
-        prompt = {
-            "ru": f"""Ты — медицинский ассистент. Пациент описал симптомы: "{symptoms}".
-    Ответь строго в JSON-формате:
-    {{
-      "specialty": "<специализация>",
-      "reason": "<пояснение>"
-    }}""",
-            "kz": f"""Сіз медициналық көмекшісіз. Пациент белгілерді сипаттады: "{symptoms}".
-    Жауапты тек JSON форматында қайтарыңыз:
-    {{
-      "specialty": "<мамандық>",
-      "reason": "<түсіндіру>"
-    }}"""
-        }.get(language, "")
+        # Prompt for the specialty (always in Russian)
+        specialty_prompt = f"""
+        You are a medical assistant. The patient described the symptoms: "{symptoms}". 
+        Please suggest an appropriate doctor based on these symptoms, without limiting to a specific specialization. 
     
-        if not prompt:
-            return Response({"success": False, "error": "Unsupported language"}, status=400)
+        1. Always provide the **specialty** in **Russian** in the JSON response.
+        2. The **specialty** should include the medical field in which the doctor specializes.
+        3. The explanation should strictly follow this JSON structure:
+    
+        {{
+          "specialty": "<specialization_in_russian>"
+        }}
+        """
+    
+        # Prompt for the reason (in the user's language)
+        reason_prompt = f"""
+        You are a medical assistant. The patient described the symptoms: "{symptoms}". 
+        Please provide a detailed explanation of the possible causes, symptoms, and recommendations for treatment or referral to a doctor.
+    
+        1. Provide the **reason** (explanation) in the language the question was asked.
+        2. The explanation should include:
+           - Possible causes for the symptoms.
+           - Additional symptoms or related signs.
+           - Recommendations for treatment or referral.
+        3. Your answer should strictly follow this JSON structure:
+    
+        {{
+          "reason": "<detailed_explanation_in_user_language>"
+        }}
+        """
     
         try:
-            payload = {
+            # Get response for specialty
+            specialty_payload = {
                 "model": "open-mistral-nemo",
                 "temperature": 0.3,
                 "top_p": 1,
                 "max_tokens": 400,
                 "messages": [
-                    {"role": "system", "content": prompt},
+                    {"role": "system", "content": specialty_prompt},
+                    {"role": "user", "content": symptoms}
+                ],
+            }
+    
+            # Get response for reason
+            reason_payload = {
+                "model": "open-mistral-nemo",
+                "temperature": 0.3,
+                "top_p": 1,
+                "max_tokens": 400,
+                "messages": [
+                    {"role": "system", "content": reason_prompt},
                     {"role": "user", "content": symptoms}
                 ],
             }
@@ -336,37 +362,49 @@ class ConsultationViewSet(ModelViewSet):
             }
     
             logger.info("📡 Отправка в LLM")
-            response = requests.post("https://api.mistral.ai/v1/chat/completions", json=payload, headers=headers)
-            response.raise_for_status()
-            reply_text = response.json()["choices"][0]["message"]["content"].strip()
     
-            logger.debug(f"🧠 Ответ AI:\n{reply_text}")
+            # Send requests for both prompts (specialty and reason)
+            specialty_response = requests.post("https://api.mistral.ai/v1/chat/completions", json=specialty_payload, headers=headers)
+            reason_response = requests.post("https://api.mistral.ai/v1/chat/completions", json=reason_payload, headers=headers)
+    
+            specialty_response.raise_for_status()
+            reason_response.raise_for_status()
+    
+            specialty_reply = specialty_response.json()["choices"][0]["message"]["content"].strip()
+            reason_reply = reason_response.json()["choices"][0]["message"]["content"].strip()
+    
+            logger.debug(f"🧠 Ответ AI для специализации:\n{specialty_reply}")
+            logger.debug(f"🧠 Ответ AI для пояснения:\n{reason_reply}")
     
             try:
-                ai_data = json.loads(reply_text)
-                specialty_raw = ai_data["specialty"].strip().lower()
-                reason = ai_data["reason"].strip()
+                # Parse the JSON responses
+                specialty_data = json.loads(specialty_reply)
+                reason_data = json.loads(reason_reply)
+    
+                specialty = specialty_data["specialty"].strip().lower()
+                reason = reason_data["reason"].strip()
+    
             except (json.JSONDecodeError, KeyError) as e:
                 logger.error("⚠️ Ошибка парсинга JSON")
-                logger.warning(f"📥 Сырой ответ от AI:\n{reply_text}")
-                return Response({"success": False, "error": "Invalid AI response format", "raw": reply_text}, status=200)
+                logger.warning(f"📥 Сырой ответ от AI (specialty):\n{specialty_reply}")
+                logger.warning(f"📥 Сырой ответ от AI (reason):\n{reason_reply}")
+                return Response({"success": False, "error": "Invalid AI response format", "raw_specialty": specialty_reply, "raw_reason": reason_reply}, status=200)
     
-            specialty = re.split(r" или | и |,|/", specialty_raw)[0].strip()
-            logger.info(f"🎯 AI выбрал специализацию: {specialty}")
-    
+            # Query doctors based on the specialty (in Russian)
             doctors = list(User.objects.filter(
                 role="doctor",
                 is_active=True,
-                doctor_type__icontains=specialty
+                doctor_specialization__name_ru__icontains=specialty
             )[:10])
     
             if not doctors:
                 logger.warning(f"❌ Не найден врач по специализации '{specialty}'")
-                logger.warning(f"📨 Ответ от AI: {reply_text}")
+                logger.warning(f"📨 Ответ от AI (specialty): {specialty_reply}")
+                logger.warning(f"📨 Ответ от AI (reason): {reason_reply}")
     
                 AIRecommendationLog.objects.create(
                     symptoms=symptoms,
-                    ai_raw_response=reply_text,
+                    ai_raw_response={"specialty": specialty_reply, "reason": reason_reply},
                     recommended_specialty=specialty,
                     reason=reason,
                     matched_doctor=None,
@@ -381,16 +419,18 @@ class ConsultationViewSet(ModelViewSet):
                     "ai_data": {
                         "specialty": specialty,
                         "reason": reason,
-                        "raw": reply_text
+                        "raw_specialty": specialty_reply,
+                        "raw_reason": reason_reply
                     }
                 }, status=200)
     
+            # Select a random doctor
             doctor = random.choice(doctors)
-            logger.info(f"👨‍⚕️ Назначен врач: {doctor.first_name} {doctor.last_name} ({doctor.doctor_type})")
+            logger.info(f"👨‍⚕️ Назначен врач: {doctor.first_name} {doctor.last_name} ({doctor.doctor_specialization.name_ru})")
     
             AIRecommendationLog.objects.create(
                 symptoms=symptoms,
-                ai_raw_response=reply_text,
+                ai_raw_response={"specialty": specialty_reply, "reason": reason_reply},
                 recommended_specialty=specialty,
                 reason=reason,
                 matched_doctor=doctor,
@@ -402,7 +442,7 @@ class ConsultationViewSet(ModelViewSet):
                 "recommended_doctor": {
                     "id": doctor.id,
                     "name": f"{doctor.first_name} {doctor.last_name}",
-                    "doctor_type": doctor.doctor_type,
+                    "doctor_specialization": doctor.doctor_specialization.name_ru,
                     "email": doctor.email,
                     "reason": reason
                 }
@@ -415,5 +455,3 @@ class ConsultationViewSet(ModelViewSet):
         except Exception as e:
             logger.exception("🔥 Непредвиденная ошибка")
             return Response({"success": False, "error": str(e)}, status=500)
-
-

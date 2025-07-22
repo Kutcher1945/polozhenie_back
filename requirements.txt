@@ -32,3 +32,5 @@ pyOpenSSL
 cryptography
 drf-spectacular
 livekit-api
+fuzzywuzzy
+geopy

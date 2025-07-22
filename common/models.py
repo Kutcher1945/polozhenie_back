@@ -13,12 +13,15 @@ class BaseModel(models.Model):
 
 
 class DoctorSpecialization(BaseModel):
-    name = models.CharField(max_length=255, unique=True, verbose_name="Специализация")
+    name_ru = models.CharField(max_length=255, unique=True, verbose_name="Специализация (RU)")
+    name_kz = models.CharField(max_length=255, unique=True, verbose_name="Специализация (KZ)")
+    name_en = models.CharField(max_length=255, unique=True, verbose_name="Specialization (EN)")
 
     def __str__(self):
-        return self.name
+        return self.name_ru  # Default to Russian name
 
     class Meta:
+        db_table = "common_doctors_specialization"
         verbose_name = "Специализация врача"
         verbose_name_plural = "Специализации врачей"
 
@@ -38,11 +41,13 @@ class User(BaseModel):
     is_active = models.BooleanField(default=True, verbose_name="Активен")
     reset_code = models.CharField(max_length=10, blank=True, null=True)
     reset_code_created_at = models.DateTimeField(null=True, blank=True) 
-    # 🔧 Добавь вот это:
     is_staff = models.BooleanField(default=False, verbose_name="Сотрудник")
     is_superuser = models.BooleanField(default=False, verbose_name="Суперпользователь")
     role = models.CharField(max_length=15, choices=ROLE_CHOICES, default='patient', verbose_name="Роль")
+
+    # Change doctor_type to a foreign key reference
     doctor_type = models.CharField(max_length=150, null=True, blank=True, verbose_name="Тип врача")
+    doctor_specialization = models.ForeignKey('DoctorSpecialization', on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Тип врача")
 
     def set_password(self, raw_password):
         """Hashes and saves the password"""
@@ -64,6 +69,7 @@ class User(BaseModel):
         db_table = "common_users"
         verbose_name = "Пользователь"
         verbose_name_plural = "Пользователи"
+
 
 
 class Clinic(BaseModel):

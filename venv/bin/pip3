@@ -1,4 +1,4 @@
-#!/home/corettaxkutcher/zhancare_back_experiment/venv/bin/python3
+#!/home/coretta/experimental_admin_back/venv/bin/python3
 # -*- coding: utf-8 -*-
 import re
 import sys
