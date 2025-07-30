@@ -12,6 +12,8 @@ from .models import Player, Question, GameSession
 from .serializers import PlayerSerializer, QuestionSerializer, GameSessionSerializer
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
+from rest_framework.permissions import AllowAny
+
 
 class PlayerViewSet(viewsets.ModelViewSet):
     queryset = Player.objects.all()
@@ -67,13 +69,16 @@ class GameSessionViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["post"])
     def generate_nickname(self, request):
-        existing_nicks = list(Player.objects.values_list("nickname", flat=True))
+        existing_nicks = set(Player.objects.values_list("nickname", flat=True))
+    
         prompt = f"""
-Придумай уникальный никнейм на английском в стиле CyberDoctor, PsychoTiger.
-Ник не должен совпадать с: {', '.join(existing_nicks)}
-⚠️ Только ник, без кавычек и без пояснений.
-"""
+    Придумай уникальный никнейм на английском в стиле CyberDoctor, PsychoTiger.
+    Ник не должен совпадать с: {', '.join(existing_nicks)}
+    ⚠️ Только ник, без кавычек и без пояснений.
+    """
+    
         try:
+            # 1. Запрос к Mistral
             response = requests.post(
                 self.MISTRAL_ENDPOINT,
                 headers={
@@ -90,10 +95,20 @@ class GameSessionViewSet(viewsets.ModelViewSet):
                     ],
                 },
             )
-            nickname = response.json()["choices"][0]["message"]["content"].strip().strip('"')
-            return Response({"nickname": nickname or "NeuroFalcon"})
+    
+            base_nick = response.json()["choices"][0]["message"]["content"].strip().strip('"')
+    
+            # 2. Проверка на уникальность и добавление суффикса при необходимости
+            final_nick = base_nick
+            suffix = 1
+            while final_nick in existing_nicks:
+                final_nick = f"{base_nick}{suffix:02d}"
+                suffix += 1
+    
+            return Response({"nickname": final_nick})
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
 
     @action(detail=False, methods=["post"])
     def submit(self, request):
