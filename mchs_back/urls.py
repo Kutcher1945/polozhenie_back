@@ -25,6 +25,7 @@ urlpatterns = [
     path("api/v1/", include("common.urls")),
     path("api/v1/", include("consultations.urls")),
     path("api/v1/", include("appointments.urls")),
+    path("api/v1/", include("ai_game.urls")),
     path('accounts/', include('django.contrib.auth.urls')),
 
     re_path(r"^swagger(?P<format>\.json|\.yaml)$", login_required(schema_view.without_ui(cache_timeout=0)), name="schema-json"),

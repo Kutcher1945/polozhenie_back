@@ -19,9 +19,15 @@ import re
 import json
 import random
 from livekit.api import AccessToken, VideoGrants
-
+from django.http import JsonResponse
+from django.views.decorators.csrf import ensure_csrf_cookie
 
 logger = logging.getLogger(__name__)
+
+
+@ensure_csrf_cookie
+def csrf_token_view(request):
+    return JsonResponse({"message": "CSRF cookie set"})
 
 # Create your views here.
 class ConsultationViewSet(ModelViewSet):

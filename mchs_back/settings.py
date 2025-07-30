@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     "common",  # Your custom app
     "appointments",
     "consultations",
+    "ai_game",
 ]
 
 APPEND_SLASH = False  # Disable appending slashes to URLs
@@ -115,12 +116,24 @@ REST_FRAMEWORK = {
 
 # Для использования на локалхосте закоментить CORS_ALLOWED_ORIGINS и раскоментить CORS_ALLOW_ALL_ORIGINS и сделать = True
 # Ensure wildcard (*) is NOT used together with specific origins
-CORS_ALLOW_ALL_ORIGINS = True  # Set this to False if not already 
+CORS_ALLOW_ALL_ORIGINS = False
+
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+]
+
+CORS_ALLOW_CREDENTIALS = True
+
+CSRF_COOKIE_HTTPONLY = False
+CSRF_COOKIE_SAMESITE = None
+CSRF_COOKIE_SECURE = True  # или True в проде
 
 CSRF_TRUSTED_ORIGINS = [
     'http://127.0.0.1:5173',
-    'http://127.0.0.1:8000/',
+    'http://127.0.0.1:8000',
     'https://exp-admin.smartalmaty.kz',
+    'http://localhost:3000',
+    'http://localhost:8000',
 ]
 
 TEMPLATES = [
