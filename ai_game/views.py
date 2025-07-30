@@ -36,14 +36,14 @@ class GameSessionViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["post"])
     def generate_question(self, request):
         prompt = """
-Сгенерируй медицинский вопрос для викторины. Верни JSON строго в формате:
-{
-  "symptoms": "описание симптомов",
-  "correct_answer": "правильный диагноз",
-  "wrong_answers": ["неправильный1", "неправильный2"]
-}
-⚠️ Только JSON. Без пояснений.
-"""
+    Сгенерируй медицинский вопрос для викторины. Верни JSON строго в формате:
+    {
+      "symptoms": "описание симптомов",
+      "correct_answer": "правильный диагноз",
+      "wrong_answers": ["неправильный1", "неправильный2"]
+    }
+    ⚠️ Только JSON. Без пояснений.
+    """
         try:
             response = requests.post(
                 self.MISTRAL_ENDPOINT,
@@ -63,20 +63,34 @@ class GameSessionViewSet(viewsets.ModelViewSet):
                 },
             )
             content = response.json()["choices"][0]["message"]["content"]
-            return Response(content)
+    
+            # === Save to DB ===
+            import json
+            parsed = json.loads(content)
+    
+            question = Question.objects.create(
+                symptoms=parsed["symptoms"].strip(),
+                correct_answer=parsed["correct_answer"].strip(),
+                wrong_answers=parsed["wrong_answers"],
+            )
+    
+            # Return serialized version (optional)
+            serializer = QuestionSerializer(question)
+            return Response(serializer.data)
+    
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @action(detail=False, methods=["post"])
     def generate_nickname(self, request):
         existing_nicks = set(Player.objects.values_list("nickname", flat=True))
-    
+
         prompt = f"""
     Придумай уникальный никнейм на английском в стиле CyberDoctor, PsychoTiger.
     Ник не должен совпадать с: {', '.join(existing_nicks)}
     ⚠️ Только ник, без кавычек и без пояснений.
     """
-    
+
         try:
             # 1. Запрос к Mistral
             response = requests.post(
@@ -95,20 +109,20 @@ class GameSessionViewSet(viewsets.ModelViewSet):
                     ],
                 },
             )
-    
+
             base_nick = response.json()["choices"][0]["message"]["content"].strip().strip('"')
-    
+
             # 2. Проверка на уникальность и добавление суффикса при необходимости
             final_nick = base_nick
             suffix = 1
             while final_nick in existing_nicks:
                 final_nick = f"{base_nick}{suffix:02d}"
                 suffix += 1
-    
+
             return Response({"nickname": final_nick})
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    
+
 
     @action(detail=False, methods=["post"])
     def submit(self, request):
