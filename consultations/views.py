@@ -511,3 +511,25 @@ class ConsultationViewSet(ModelViewSet):
         except Exception as e:
             logger.exception("🔥 Непредвиденная ошибка")
             return Response({"success": False, "error": str(e)}, status=500)
+    
+    @action(detail=False, methods=["get"], url_path="my-consultations")
+    def my_consultations(self, request):
+        user = request.user
+
+        # ✅ Restrict to patients only
+        if user.role != "patient":
+            return Response(
+                {"error": "Only patients can view their consultations."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # ✅ Optional filtering by status
+        status_filter = request.query_params.get("status")
+        consultations = Consultation.objects.filter(patient=user)
+        if status_filter:
+            consultations = consultations.filter(status=status_filter)
+
+        consultations = consultations.order_by("-created_at")
+
+        serializer = self.get_serializer(consultations, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
