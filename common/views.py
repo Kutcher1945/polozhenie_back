@@ -112,16 +112,13 @@ class UserViewSet(ModelViewSet):
         CustomToken.objects.filter(user=user).delete()
         token = CustomToken.objects.create(user=user)
 
+        # Use UserProfileSerializer to include all profile fields
+        user_serializer = UserProfileSerializer(user)
+
         return Response(
             {
                 "message": "Login successful!",
-                "user": {
-                    "id": user.id,
-                    "email": user.email,
-                    "first_name": user.first_name,
-                    "last_name": user.last_name,
-                    "role": user.role,
-                },
+                "user": user_serializer.data,
                 "access_token": token.key,   # ✅ renamed for frontend
                 "refresh_token": token.key,  # ❗ you can later change this to separate value
             },
@@ -293,20 +290,75 @@ class UserViewSet(ModelViewSet):
         ]
         return Response({"doctors": doctor_list}, status=status.HTTP_200_OK)
 
+    @swagger_auto_schema(
+        operation_description="Get user profile field choices",
+        responses={200: "List of field choices for user profile"},
+    )
+    @action(detail=False, methods=["get"], url_path="profile/choices")
+    def get_profile_choices(self, request):
+        """Get all available choices for user profile fields."""
+        choices = {
+            "gender_choices": [{"value": key, "label": value} for key, value in User.GENDER_CHOICES],
+            "language_choices": [{"value": key, "label": value} for key, value in User.LANGUAGE_CHOICES],
+            "marital_status_choices": [{"value": key, "label": value} for key, value in User.MARITAL_STATUS_CHOICES],
+            "blood_type_choices": [{"value": key, "label": value} for key, value in User.BLOOD_TYPE_CHOICES],
+            "role_choices": [{"value": key, "label": value} for key, value in User.ROLE_CHOICES],
+        }
+        return Response(choices, status=status.HTTP_200_OK)
+
 class UserProfileViewSet(ViewSet):
     """
     A ViewSet for handling user profile operations.
     """
 
     @swagger_auto_schema(
+        method='get',
         operation_description="Fetch the authenticated user's profile",
         responses={200: UserProfileSerializer},
     )
-    @action(detail=False, methods=["get"], url_path="profile")
+    @swagger_auto_schema(
+        method='patch',
+        operation_description="Update the authenticated user's profile",
+        request_body=UserProfileSerializer,
+        responses={
+            200: UserProfileSerializer,
+            400: "Validation error"
+        },
+    )
+    @action(detail=False, methods=["get", "patch"], url_path="profile")
     def myprofile(self, request):
-        user = request.user
-        serializer = UserProfileSerializer(user)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        # Get the custom User instance using the authenticated token
+        try:
+            # If using CustomTokenAuthentication, the request.user should be the custom User
+            # But if it's AnonymousUser, we need to get the custom User from the token
+            if hasattr(request.user, 'role'):
+                # Already have custom User instance
+                user = request.user
+            else:
+                # Get custom User from token
+                from common.models import CustomToken
+                auth_header = request.META.get('HTTP_AUTHORIZATION', '')
+                if auth_header.startswith('Token '):
+                    token_key = auth_header.split(' ')[1]
+                    token = CustomToken.objects.select_related('user').get(key=token_key)
+                    user = token.user
+                else:
+                    return Response({'error': 'Authentication token required'}, status=status.HTTP_401_UNAUTHORIZED)
+        except CustomToken.DoesNotExist:
+            return Response({'error': 'Invalid token'}, status=status.HTTP_401_UNAUTHORIZED)
+        except Exception as e:
+            return Response({'error': f'Authentication error: {str(e)}'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        if request.method == "GET":
+            serializer = UserProfileSerializer(user)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        elif request.method == "PATCH":
+            serializer = UserProfileSerializer(user, data=request.data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data, status=status.HTTP_200_OK)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
     @swagger_auto_schema(
         operation_description="Fetch a specific user's profile by user_id",

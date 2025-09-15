@@ -28,6 +28,9 @@ DEBUG = True
 
 ALLOWED_HOSTS = ['127.0.0.1', 'localhost', '.vercel.app', 'exp-admin.smartalmaty.kz']
 
+# Custom User Model
+AUTH_USER_MODEL = 'common.User'
+
 # Application definition
 
 INSTALLED_APPS = [
