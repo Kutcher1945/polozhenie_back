@@ -4,6 +4,7 @@ from django.conf import settings
 from django.utils import timezone
 import random
 import string
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.viewsets import ModelViewSet, ViewSet
 from rest_framework.response import Response
 from rest_framework.decorators import action
@@ -25,8 +26,65 @@ def csrf_cookie_view(request):
     return JsonResponse({"message": "CSRF cookie set"})
 
 class UserViewSet(ModelViewSet):
-    queryset = User.objects.all()
+    queryset = User.objects.none()  # ✅ No default access to users
     serializer_class = UserSerializer
+    permission_classes = []  # ✅ No permissions by default - each action defines its own
+
+    def get_permissions(self):
+        """
+        Override permissions per action
+        """
+        if self.action in ['register', 'login', 'forgot_password', 'verify_reset_code', 'reset_password', 'get_available_doctors', 'get_profile_choices']:
+            # Public endpoints - no authentication required
+            return []
+        else:
+            # All other endpoints require authentication
+            return [IsAuthenticated()]
+
+    def list(self):
+        """
+        Disable listing all users - security risk
+        """
+        return Response(
+            {"error": "Listing users is not allowed"},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    def retrieve(self, request, pk=None):
+        """
+        Disable retrieving individual users - security risk
+        """
+        return Response(
+            {"error": "Direct user access is not allowed"},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    def update(self, request, pk=None):
+        """
+        Disable updating users through this endpoint
+        """
+        return Response(
+            {"error": "User updates not allowed through this endpoint"},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    def partial_update(self, request, pk=None):
+        """
+        Disable partial updating users through this endpoint
+        """
+        return Response(
+            {"error": "User updates not allowed through this endpoint"},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    def destroy(self, request, pk=None):
+        """
+        Disable deleting users through this endpoint
+        """
+        return Response(
+            {"error": "User deletion not allowed through this endpoint"},
+            status=status.HTTP_403_FORBIDDEN
+        )
 
     
     @swagger_auto_schema(
