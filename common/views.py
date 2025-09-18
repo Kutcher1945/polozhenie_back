@@ -332,20 +332,45 @@ class UserViewSet(ModelViewSet):
     @action(detail=False, methods=["get"], url_path="doctor/available")
     def get_available_doctors(self, request):
         """Fetch a list of available doctors."""
-        doctors = User.objects.filter(role="doctor", is_active=True)
+        # Optimize query to avoid N+1 problem by prefetching specializations
+        doctors = User.objects.filter(
+            role="doctor",
+            is_active=True
+        ).select_related('doctor_specialization')
 
         if not doctors.exists():
             return Response({"error": "No available doctors found."}, status=status.HTTP_404_NOT_FOUND)
 
-        doctor_list = [
-            {
+        # Get language preference from request (default to Russian)
+        language = request.GET.get('lang', 'ru')
+
+        doctor_list = []
+        for doctor in doctors:
+            # Get specialization in requested language
+            if doctor.doctor_specialization:
+                if language == 'kz':
+                    specialization = doctor.doctor_specialization.name_kz
+                elif language == 'en':
+                    specialization = doctor.doctor_specialization.name_en
+                else:
+                    specialization = doctor.doctor_specialization.name_ru
+            else:
+                specialization = doctor.doctor_type or "Специальность не указана"
+
+            doctor_list.append({
                 "id": doctor.id,
                 "name": f"{doctor.first_name} {doctor.last_name}",
                 "email": doctor.email,
-                "doctor_type": doctor.doctor_type,  # 🆕 Add doctor_type field
-            }
-            for doctor in doctors
-        ]
+                "doctor_type": specialization,
+                # Include additional specialization details
+                "specialization": {
+                    "id": doctor.doctor_specialization.id if doctor.doctor_specialization else None,
+                    "name_ru": doctor.doctor_specialization.name_ru if doctor.doctor_specialization else None,
+                    "name_kz": doctor.doctor_specialization.name_kz if doctor.doctor_specialization else None,
+                    "name_en": doctor.doctor_specialization.name_en if doctor.doctor_specialization else None,
+                } if doctor.doctor_specialization else None
+            })
+
         return Response({"doctors": doctor_list}, status=status.HTTP_200_OK)
 
     @swagger_auto_schema(

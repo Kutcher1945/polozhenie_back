@@ -342,15 +342,37 @@ class ConsultationViewSet(ModelViewSet):
     
         # Third prompt for urgency, separate from the reason
         urgency_prompt = f"""
-        You are a medical assistant. The patient described the symptoms: "{symptoms}". 
-        Please evaluate the urgency of the condition.
-    
-        1. If the condition is **urgent**, recommend immediate care or emergency services.
-        2. If the condition is **non-urgent**, suggest scheduling an appointment.
-        3. Your answer should strictly follow this JSON structure:
-    
+        You are a medical assistant. The patient described the symptoms: "{symptoms}".
+        Please evaluate the urgency of the condition based on medical triage principles.
+
+        URGENT conditions require immediate medical attention (examples):
+        - High fever (>39°C/102°F) with severe symptoms
+        - Chest pain, difficulty breathing, or heart palpitations
+        - Severe headache with neurological symptoms
+        - Severe abdominal pain or persistent vomiting
+        - Signs of severe infection or sepsis
+        - Mental health crisis or suicidal thoughts
+        - Severe allergic reactions
+        - Trauma or severe injury
+
+        NON-URGENT conditions can be scheduled for regular appointments (examples):
+        - Mild cold or flu symptoms
+        - Minor aches and pains
+        - Routine check-ups or follow-ups
+        - Mild headaches without other symptoms
+        - Minor digestive issues
+        - Skin issues (non-severe)
+        - General wellness concerns
+
+        Your answer must be EXACTLY one of these two values: "urgent" or "non_urgent"
+
+        Return ONLY the JSON object, no markdown formatting, no code blocks, no explanations:
         {{
-          "urgency": "<urgent_or_non_urgent>"
+          "urgency": "urgent"
+        }}
+        OR
+        {{
+          "urgency": "non_urgent"
         }}
         """
     
@@ -372,7 +394,7 @@ class ConsultationViewSet(ModelViewSet):
                 "model": "open-mistral-nemo",
                 "temperature": 0.3,
                 "top_p": 1,
-                "max_tokens": 400,
+                "max_tokens": 800,  # Increase tokens for reason to avoid truncation
                 "messages": [
                     {"role": "system", "content": reason_prompt},
                     {"role": "user", "content": symptoms}
@@ -382,9 +404,9 @@ class ConsultationViewSet(ModelViewSet):
             # Get response for urgency
             urgency_payload = {
                 "model": "open-mistral-nemo",
-                "temperature": 0.3,
+                "temperature": 0.1,  # Lower temperature for more consistent urgency classification
                 "top_p": 1,
-                "max_tokens": 400,
+                "max_tokens": 100,  # Shorter response needed for urgency
                 "messages": [
                     {"role": "system", "content": urgency_prompt},
                     {"role": "user", "content": symptoms}
@@ -407,9 +429,29 @@ class ConsultationViewSet(ModelViewSet):
             reason_response.raise_for_status()
             urgency_response.raise_for_status()
     
-            specialty_reply = specialty_response.json()["choices"][0]["message"]["content"].strip()
-            reason_reply = reason_response.json()["choices"][0]["message"]["content"].strip()
-            urgency_reply = urgency_response.json()["choices"][0]["message"]["content"].strip()
+            def extract_json_from_response(response_text):
+                """Extract JSON from AI response, handling markdown code blocks"""
+                text = response_text.strip()
+
+                # Check if response is wrapped in markdown code blocks
+                if '```json' in text:
+                    # Extract content between ```json and ```
+                    start = text.find('```json') + 7
+                    end = text.find('```', start)
+                    if end != -1:
+                        text = text[start:end].strip()
+                elif '```' in text:
+                    # Extract content between ``` and ```
+                    start = text.find('```') + 3
+                    end = text.find('```', start)
+                    if end != -1:
+                        text = text[start:end].strip()
+
+                return text
+
+            specialty_reply = extract_json_from_response(specialty_response.json()["choices"][0]["message"]["content"])
+            reason_reply = extract_json_from_response(reason_response.json()["choices"][0]["message"]["content"])
+            urgency_reply = extract_json_from_response(urgency_response.json()["choices"][0]["message"]["content"])
     
             # Debugging: Print the raw responses
             print("Specialty Response:", specialty_reply)
@@ -421,18 +463,45 @@ class ConsultationViewSet(ModelViewSet):
             logger.debug(f"🧠 Ответ AI для экстренности:\n{urgency_reply}")
     
             try:
-                # Parse the JSON responses
-                specialty_data = json.loads(specialty_reply)
-                reason_data = json.loads(reason_reply)
-                urgency_data = json.loads(urgency_reply)
-    
-                specialty = specialty_data["specialty"].strip().lower()
-                reason = reason_data["reason"].strip()
-                urgency = urgency_data["urgency"].strip()  # Extract urgency from the urgency response
-    
+                # Parse the JSON responses with better error handling
+                try:
+                    specialty_data = json.loads(specialty_reply)
+                    specialty = specialty_data["specialty"].strip().lower()
+                except (json.JSONDecodeError, KeyError) as e:
+                    logger.error(f"Failed to parse specialty JSON: {e}")
+                    logger.warning(f"Specialty response: {specialty_reply}")
+                    raise
+
+                try:
+                    reason_data = json.loads(reason_reply)
+                    reason = reason_data["reason"].strip()
+                except (json.JSONDecodeError, KeyError) as e:
+                    logger.error(f"Failed to parse reason JSON: {e}")
+                    logger.warning(f"Reason response: {reason_reply}")
+                    raise
+
+                try:
+                    urgency_data = json.loads(urgency_reply)
+                    urgency_raw = urgency_data["urgency"].strip()
+                except (json.JSONDecodeError, KeyError) as e:
+                    logger.error(f"Failed to parse urgency JSON: {e}")
+                    logger.warning(f"Urgency response: {urgency_reply}")
+                    # Default to non_urgent if urgency parsing fails
+                    urgency_raw = "non_urgent"
+
+                # Validate and normalize urgency value
+                if urgency_raw.lower() in ["urgent", "emergency", "immediate", "critical"]:
+                    urgency = "urgent"
+                elif urgency_raw.lower() in ["non_urgent", "non-urgent", "routine", "planned", "regular"]:
+                    urgency = "non_urgent"
+                else:
+                    # Default to non_urgent if unclear
+                    urgency = "non_urgent"
+                    logger.warning(f"⚠️ Unexpected urgency value from AI: '{urgency_raw}', defaulting to 'non_urgent'")
+
                 # Debugging: Print urgency value
-                print(f"Urgency value extracted from AI: {urgency}")
-    
+                print(f"Urgency value extracted from AI: {urgency_raw} -> normalized to: {urgency}")
+
             except (json.JSONDecodeError, KeyError) as e:
                 logger.error("⚠️ Ошибка парсинга JSON")
                 logger.warning(f"📥 Сырой ответ от AI (specialty):\n{specialty_reply}")
@@ -497,7 +566,7 @@ class ConsultationViewSet(ModelViewSet):
                 "recommended_doctor": {
                     "id": doctor.id,
                     "name": f"{doctor.first_name} {doctor.last_name}",
-                    "doctor_specialization": doctor.doctor_specialization.name_ru,
+                    "doctor_type": doctor.doctor_specialization.name_ru,  # Use doctor_type to match frontend expectation
                     "email": doctor.email,
                     "reason": reason,
                     "urgency": urgency  # Include urgency in the response
