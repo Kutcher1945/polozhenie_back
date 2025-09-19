@@ -113,6 +113,12 @@ def book_dynamic_slot(request):
         scheduled_time_str = request.data.get('scheduled_time')
         ai_recommendation_id = request.data.get('ai_recommendation_id')
 
+        print(f"🔍 book_dynamic_slot called with:")
+        print(f"   doctor_id: {doctor_id}")
+        print(f"   scheduled_time: {scheduled_time_str}")
+        print(f"   ai_recommendation_id: {ai_recommendation_id}")
+        print(f"   user: {request.user}")
+
         if not doctor_id:
             return Response(
                 {'error': 'doctor_id is required'},
@@ -144,7 +150,15 @@ def book_dynamic_slot(request):
 
         ai_recommendation = None
         if ai_recommendation_id:
-            ai_recommendation = get_object_or_404(AIRecommendationLog, id=ai_recommendation_id)
+            try:
+                ai_recommendation = AIRecommendationLog.objects.get(id=ai_recommendation_id)
+                print(f"✅ Found AI recommendation: {ai_recommendation.id}")
+            except AIRecommendationLog.DoesNotExist:
+                print(f"❌ AI recommendation {ai_recommendation_id} not found")
+                return Response(
+                    {'error': f'AI recommendation {ai_recommendation_id} not found'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
         # Check if this exact time slot is already booked
         existing_consultation = Consultation.objects.filter(
@@ -159,23 +173,42 @@ def book_dynamic_slot(request):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Create the consultation
-        with transaction.atomic():
-            consultation = Consultation.objects.create(
-                patient=request.user,
-                doctor=doctor,
-                scheduled_at=scheduled_time,
-                status='scheduled',
-                consultation_type='video',
-                ai_recommendation=ai_recommendation
-            )
+        # Create the consultation (without consultation_type field)
+        print(f"🔄 Creating consultation...")
+        print(f"   patient: {request.user}")
+        print(f"   doctor: {doctor}")
+        print(f"   scheduled_at: {scheduled_time}")
+        print(f"   ai_recommendation: {ai_recommendation}")
+
+        try:
+            with transaction.atomic():
+                consultation = Consultation.objects.create(
+                    patient=request.user,
+                    doctor=doctor,
+                    scheduled_at=scheduled_time,
+                    status='scheduled',
+                    meeting_id=f"meeting_{request.user.id}_{doctor.id}_{int(scheduled_time.timestamp())}",
+                    ai_recommendation=ai_recommendation
+                )
+                print(f"✅ Consultation created successfully: {consultation.id}")
+        except Exception as create_error:
+            print(f"❌ Error creating consultation: {create_error}")
+            raise
+
+        print(f"🔄 Serializing consultation data...")
+        consultation_data = ConsultationSerializer(consultation).data
+        print(f"✅ Serialization successful")
 
         return Response({
-            'consultation': ConsultationSerializer(consultation).data,
+            'consultation': consultation_data,
             'message': f'Консультация запланирована на {consultation.scheduled_at.strftime("%Y-%m-%d %H:%M")}'
         }, status=status.HTTP_201_CREATED)
 
     except Exception as e:
+        print(f"❌ Unexpected error in book_dynamic_slot: {e}")
+        print(f"❌ Error type: {type(e)}")
+        import traceback
+        print(f"❌ Traceback: {traceback.format_exc()}")
         return Response(
             {'error': str(e)},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR

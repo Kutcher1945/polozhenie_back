@@ -248,6 +248,54 @@ class ConsultationViewSet(ModelViewSet):
 
         return Response({"status": consultation.status}, status=status.HTTP_200_OK)
 
+    @action(detail=True, methods=["post"], url_path="status")
+    def update_consultation_status(self, request, meeting_id=None):
+        """
+        Update consultation status (for doctors)
+
+        POST /api/consultations/{meeting_id}/status/
+        {
+            "status": "completed"
+        }
+        """
+        user = request.user
+        consultation = self.get_object()
+
+        # Only doctors can change consultation status
+        if user.role != "doctor" or consultation.doctor != user:
+            return Response(
+                {"error": "You are not authorized to change this consultation status."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        new_status = request.data.get("status")
+        if not new_status:
+            return Response(
+                {"error": "Status is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Validate status
+        valid_statuses = ["pending", "ongoing", "completed", "cancelled", "missed", "scheduled", "planned"]
+        if new_status not in valid_statuses:
+            return Response(
+                {"error": f"Invalid status. Valid options: {', '.join(valid_statuses)}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Update consultation status
+        consultation.status = new_status
+        if new_status == "ongoing" and not consultation.started_at:
+            consultation.started_at = timezone.now()
+        elif new_status == "completed" and not consultation.ended_at:
+            consultation.ended_at = timezone.now()
+
+        consultation.save()
+
+        return Response({
+            "message": "Consultation status updated successfully",
+            "status": consultation.status
+        }, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["post"], url_path="start-call")
     def start_call(self, request, meeting_id=None):
@@ -522,7 +570,7 @@ class ConsultationViewSet(ModelViewSet):
                 logger.warning(f"📨 Ответ от AI (reason): {reason_reply}")
                 logger.warning(f"📨 Ответ от AI (urgency): {urgency_reply}")
     
-                AIRecommendationLog.objects.create(
+                ai_recommendation = AIRecommendationLog.objects.create(
                     symptoms=symptoms,
                     ai_raw_response={"specialty": specialty_reply, "reason": reason_reply, "urgency": urgency_reply},
                     recommended_specialty=specialty,
@@ -532,11 +580,12 @@ class ConsultationViewSet(ModelViewSet):
                     specialty_not_found=specialty,
                     urgency=urgency  # Store urgency level in the log
                 )
-    
+
                 return Response({
                     "success": False,
                     "error": f"No doctor found for '{specialty}'",
                     "fallback_used": False,
+                    "ai_recommendation_id": ai_recommendation.id,  # Include the AI recommendation ID even for fallback
                     "ai_data": {
                         "specialty": specialty,
                         "reason": reason,
@@ -551,7 +600,7 @@ class ConsultationViewSet(ModelViewSet):
             doctor = random.choice(doctors)
             logger.info(f"👨‍⚕️ Назначен врач: {doctor.first_name} {doctor.last_name} ({doctor.doctor_specialization.name_ru})")
     
-            AIRecommendationLog.objects.create(
+            ai_recommendation = AIRecommendationLog.objects.create(
                 symptoms=symptoms,
                 ai_raw_response={"specialty": specialty_reply, "reason": reason_reply, "urgency": urgency_reply},
                 recommended_specialty=specialty,
@@ -560,9 +609,10 @@ class ConsultationViewSet(ModelViewSet):
                 fallback_used=False,
                 urgency=urgency  # Store urgency level in the log
             )
-    
+
             return Response({
                 "success": True,
+                "ai_recommendation_id": ai_recommendation.id,  # Include the AI recommendation ID
                 "recommended_doctor": {
                     "id": doctor.id,
                     "name": f"{doctor.first_name} {doctor.last_name}",

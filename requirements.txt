@@ -34,3 +34,4 @@ drf-spectacular
 livekit-api
 fuzzywuzzy
 geopy
+websockets
