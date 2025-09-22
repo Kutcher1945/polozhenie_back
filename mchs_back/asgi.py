@@ -11,7 +11,8 @@ import os
 from django.core.asgi import get_asgi_application
 from channels.routing import ProtocolTypeRouter, URLRouter
 from channels.auth import AuthMiddlewareStack
-from consultations.routing import websocket_urlpatterns
+from consultations.routing import websocket_urlpatterns as consultation_patterns
+from common.routing import websocket_urlpatterns as common_patterns
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'mchs_back.settings')
 
@@ -19,7 +20,7 @@ application = ProtocolTypeRouter({
     "http": get_asgi_application(),
     "websocket": AuthMiddlewareStack(
         URLRouter(
-            websocket_urlpatterns
+            consultation_patterns + common_patterns
         )
     ),
 })

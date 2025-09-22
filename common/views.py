@@ -333,9 +333,11 @@ class UserViewSet(ModelViewSet):
     def get_available_doctors(self, request):
         """Fetch a list of available doctors."""
         # Optimize query to avoid N+1 problem by prefetching specializations
+        # Only show available doctors
         doctors = User.objects.filter(
             role="doctor",
-            is_active=True
+            is_active=True,
+            availability_status='available'
         ).select_related('doctor_specialization')
 
         if not doctors.exists():
@@ -388,6 +390,131 @@ class UserViewSet(ModelViewSet):
             "role_choices": [{"value": key, "label": value} for key, value in User.ROLE_CHOICES],
         }
         return Response(choices, status=status.HTTP_200_OK)
+
+    @swagger_auto_schema(
+        operation_description="Update doctor availability status",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                "availability_status": openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    enum=['available', 'busy', 'offline', 'break'],
+                    description="Doctor's availability status"
+                ),
+                "availability_note": openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description="Optional note about availability"
+                ),
+            },
+            required=["availability_status"],
+        ),
+        responses={
+            200: "Availability updated successfully",
+            400: "Invalid status",
+            403: "Only doctors can update availability"
+        },
+    )
+    @action(detail=False, methods=["patch"], url_path="update-availability")
+    def update_availability(self, request):
+        """Update doctor's availability status"""
+        from channels.layers import get_channel_layer
+        from asgiref.sync import async_to_sync
+
+        # Get the authenticated user
+        try:
+            if hasattr(request.user, 'role'):
+                user = request.user
+                print("[DEBUG] Using request.user directly:", user)
+                print("[DEBUG] request.user.role:", getattr(user, "role", None))
+            else:
+                from common.models import CustomToken
+                auth_header = request.META.get('HTTP_AUTHORIZATION', '')
+                print("[DEBUG] Auth header:", auth_header)
+
+                if auth_header.startswith('Token '):
+                    token_key = auth_header.split(' ')[1]
+                    print("[DEBUG] Token key:", token_key)
+
+                    token = CustomToken.objects.select_related('user').get(key=token_key)
+                    user = token.user
+                    print("[DEBUG] User from token:", user)
+                    print("[DEBUG] user.role:", getattr(user, "role", None))
+                else:
+                    print("[DEBUG] No valid token in header")
+                    return Response({'error': 'Authentication required'}, status=status.HTTP_401_UNAUTHORIZED)
+        except Exception as e:
+            print("[ERROR] Authentication error:", str(e))
+            return Response({'error': 'Authentication error'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        # Check if user is a doctor (case-insensitive)
+        user_role = getattr(user, 'role', '').strip().lower()
+        print("[DEBUG] Final resolved user:", user)
+        print("[DEBUG] user.id:", getattr(user, "id", None))
+        print("[DEBUG] user.email:", getattr(user, "email", None))
+        print("[DEBUG] user.role:", user_role)
+
+        if user_role != 'doctor':
+            print("[DEBUG] Role check failed. Expected 'doctor', got:", user_role)
+            return Response(
+                {"error": "Only doctors can update availability status", "debug_role": user_role},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        availability_status = request.data.get('availability_status')
+        availability_note = request.data.get('availability_note', '')
+
+        # Validate status
+        valid_statuses = ['available', 'busy', 'offline', 'break']
+        if availability_status not in valid_statuses:
+            print("[DEBUG] Invalid status received:", availability_status)
+            return Response(
+                {"error": f"Invalid status. Must be one of: {', '.join(valid_statuses)}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Store old status for change detection
+        old_status = user.availability_status
+
+        # Update availability
+        user.availability_status = availability_status
+        user.availability_note = availability_note
+        user.save()
+        print(f"[DEBUG] Updated {user.email} availability from {old_status} -> {availability_status}")
+
+        # Broadcast availability change via WebSocket
+        channel_layer = get_channel_layer()
+        if channel_layer:
+            try:
+                payload = {
+                    'type': 'doctor_availability_changed',
+                    'doctor_id': user.id,
+                    'availability_status': availability_status,
+                    'availability_note': availability_note,
+                    'old_status': old_status,
+                    'doctor_info': {
+                        'id': user.id,
+                        'name': f"{user.first_name} {user.last_name}",
+                        'email': user.email,
+                        'specialization': user.doctor_specialization.name_ru if user.doctor_specialization else user.doctor_type
+                    }
+                }
+
+                # Send to all Socket.IO clients
+                async_to_sync(channel_layer.group_send)("socketio_clients", payload)
+
+                # Also send to consultation clients
+                async_to_sync(channel_layer.group_send)("consultations", payload)
+
+                logger.info(f"Doctor {user.email} availability changed from {old_status} to {availability_status}")
+            except Exception as e:
+                print("[ERROR] Failed to broadcast availability change:", str(e))
+                logger.error(f"Failed to broadcast availability change: {str(e)}")
+
+        return Response({
+            "message": "Availability updated successfully",
+            "availability_status": availability_status,
+            "availability_note": availability_note
+        }, status=status.HTTP_200_OK)
 
 class UserProfileViewSet(ViewSet):
     """
@@ -599,3 +726,133 @@ class UserProfileViewSet(ViewSet):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         except User.DoesNotExist:
             return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    @swagger_auto_schema(
+        operation_description="Update doctor availability status",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                "availability_status": openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    enum=['available', 'busy', 'offline', 'break'],
+                    description="Doctor's availability status"
+                ),
+                "availability_note": openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description="Optional note about availability"
+                ),
+            },
+            required=["availability_status"],
+        ),
+        responses={
+            200: "Availability updated successfully",
+            400: "Invalid status",
+            403: "Only doctors can update availability"
+        },
+    )
+    @action(detail=False, methods=["patch"], url_path="update-availability")
+    def update_availability(self, request):
+        """Update doctor's availability status"""
+        from channels.layers import get_channel_layer
+        from asgiref.sync import async_to_sync
+    
+        # Get the authenticated user
+        try:
+            if hasattr(request.user, 'role'):
+                user = request.user
+                print("[DEBUG] Using request.user directly:", user)
+                print("[DEBUG] request.user.role:", getattr(user, "role", None))
+            else:
+                from common.models import CustomToken
+                auth_header = request.META.get('HTTP_AUTHORIZATION', '')
+                print("[DEBUG] Auth header:", auth_header)
+    
+                if auth_header.startswith('Token '):
+                    token_key = auth_header.split(' ')[1]
+                    print("[DEBUG] Token key:", token_key)
+    
+                    token = CustomToken.objects.select_related('user').get(key=token_key)
+                    user = token.user
+                    print("[DEBUG] User from token:", user)
+                    print("[DEBUG] user.role:", getattr(user, "role", None))
+                else:
+                    print("[DEBUG] No valid token in header")
+                    return Response({'error': 'Authentication required'}, status=status.HTTP_401_UNAUTHORIZED)
+        except Exception as e:
+            print("[ERROR] Authentication error:", str(e))
+            return Response({'error': 'Authentication error'}, status=status.HTTP_401_UNAUTHORIZED)
+    
+        # Check if user is a doctor (case-insensitive)
+        user_role = getattr(user, 'role', '').strip().lower()
+        print("[DEBUG] Final resolved user:", user)
+        print("[DEBUG] user.id:", getattr(user, "id", None))
+        print("[DEBUG] user.email:", getattr(user, "email", None))
+        print("[DEBUG] user.role:", user_role)
+    
+        if user_role != 'doctor':
+            print("[DEBUG] Role check failed. Expected 'doctor', got:", user_role)
+            return Response(
+                {"error": "Only doctors can update availability status", "debug_role": user_role},
+                status=status.HTTP_403_FORBIDDEN
+            )
+    
+        availability_status = request.data.get('availability_status')
+        availability_note = request.data.get('availability_note', '')
+    
+        # Validate status
+        valid_statuses = ['available', 'busy', 'offline', 'break']
+        if availability_status not in valid_statuses:
+            print("[DEBUG] Invalid status received:", availability_status)
+            return Response(
+                {"error": f"Invalid status. Must be one of: {', '.join(valid_statuses)}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
+        # Store old status for change detection
+        old_status = user.availability_status
+    
+        # Update availability
+        user.availability_status = availability_status
+        user.availability_note = availability_note
+        user.save()
+        print(f"[DEBUG] Updated {user.email} availability from {old_status} -> {availability_status}")
+    
+        # Broadcast availability change via WebSocket
+        channel_layer = get_channel_layer()
+        if channel_layer:
+            try:
+                payload = {
+                    'type': 'doctor_availability_changed',
+                    'doctor_id': user.id,
+                    'availability_status': availability_status,
+                    'availability_note': availability_note,
+                    'old_status': old_status,
+                    'doctor_info': {
+                        'id': user.id,
+                        'name': f"{user.first_name} {user.last_name}",
+                        'email': user.email,
+                        'specialization': user.doctor_specialization.name_ru if user.doctor_specialization else user.doctor_type
+                    }
+                }
+    
+                # Send to all Socket.IO clients
+                async_to_sync(channel_layer.group_send)("socketio_clients", payload)
+    
+                # Also send to consultation clients
+                async_to_sync(channel_layer.group_send)("consultations", payload)
+    
+                logger.info(f"Doctor {user.email} availability changed from {old_status} to {availability_status}")
+            except Exception as e:
+                print("[ERROR] Failed to broadcast availability change:", str(e))
+                logger.error(f"Failed to broadcast availability change: {str(e)}")
+    
+        return Response({
+            "message": "Availability updated successfully",
+            "availability_status": availability_status,
+            "availability_note": availability_note
+        }, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=["post"], url_path="test-action")
+    def test_action(self, request):
+        """Test action to see if actions work"""
+        return Response({"message": "Test action works!"}, status=status.HTTP_200_OK)

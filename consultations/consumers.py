@@ -139,3 +139,19 @@ class ConsultationConsumer(AsyncWebsocketConsumer):
             'data': event['consultation'],
             'timestamp': event.get('timestamp')
         }))
+
+    async def doctor_availability_changed(self, event):
+        """Send doctor availability change notification to WebSocket"""
+        logger.info(f"Sending doctor_availability_changed to {self.channel_name}")
+
+        await self.send(text_data=json.dumps({
+            'type': 'doctor_availability_changed',
+            'data': {
+                'doctor_id': event['doctor_id'],
+                'availability_status': event['availability_status'],
+                'availability_note': event.get('availability_note', ''),
+                'old_status': event.get('old_status'),
+                'doctor_info': event.get('doctor_info', {}),
+                'timestamp': event.get('timestamp')
+            }
+        }))

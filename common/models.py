@@ -114,6 +114,30 @@ class User(BaseModel):
     doctor_type = models.CharField(max_length=150, null=True, blank=True, verbose_name="Тип врача")
     doctor_specialization = models.ForeignKey('DoctorSpecialization', on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Специализация врача")
 
+    # Статус доступности для докторов
+    AVAILABILITY_CHOICES = [
+        ('available', 'Доступен'),
+        ('busy', 'Занят'),
+        ('offline', 'Не работает'),
+        ('break', 'На перерыве'),
+    ]
+
+    availability_status = models.CharField(
+        max_length=20,
+        choices=AVAILABILITY_CHOICES,
+        default='offline',
+        null=True,
+        blank=True,
+        verbose_name="Статус доступности"
+    )
+    availability_note = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        verbose_name="Заметка о доступности"
+    )
+    last_seen = models.DateTimeField(auto_now=True, verbose_name="Последний раз в сети")
+
     # Django authentication requirements
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ['first_name', 'last_name']
@@ -177,6 +201,17 @@ class DoctorProfile(BaseModel):
     specialization = models.ForeignKey(DoctorSpecialization, on_delete=models.SET_NULL, null=True, blank=True)
     years_of_experience = models.PositiveIntegerField(null=True, blank=True, verbose_name="Опыт работы (лет)")
     clinics = models.ManyToManyField(Clinic, blank=True, related_name='doctors', verbose_name="Клиники")
+
+    @property
+    def is_available_for_consultation(self):
+        """Check if doctor is available for new consultations"""
+        return self.user.availability_status == 'available'
+
+    @property
+    def availability_display(self):
+        """Get display text for availability status"""
+        choices = dict(self.user.AVAILABILITY_CHOICES)
+        return choices.get(self.user.availability_status, 'Неизвестно') if self.user.availability_status else 'Неизвестно'
 
     def __str__(self):
         return f"{self.user.first_name} {self.user.last_name} - {self.specialization.name if self.specialization else 'Без специализации'}"

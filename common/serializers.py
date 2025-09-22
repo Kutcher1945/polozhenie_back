@@ -63,6 +63,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
     rhesus_factor_display = serializers.SerializerMethodField()
     fluorography_status_display = serializers.SerializerMethodField()
     immunization_status_display = serializers.SerializerMethodField()
+    availability_status_display = serializers.SerializerMethodField()
     date_joined = serializers.DateTimeField(source='created_at', read_only=True)
 
     class Meta:
@@ -74,6 +75,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
             'marital_status_display', 'profession', 'blood_type', 'blood_type_display',
             'rhesus_factor', 'rhesus_factor_display', 'fluorography_status', 'fluorography_status_display',
             'fluorography_date', 'immunization_status', 'immunization_status_display', 'immunization_date',
+            'availability_status', 'availability_status_display', 'availability_note', 'last_seen',
             'date_joined'
         ]
         read_only_fields = ['email', 'role', 'date_joined']
@@ -101,6 +103,9 @@ class UserProfileSerializer(serializers.ModelSerializer):
 
     def get_immunization_status_display(self, obj):
         return dict(User.IMMUNIZATION_STATUS_CHOICES).get(obj.immunization_status, "Не указано") if obj.immunization_status else "Не указано"
+
+    def get_availability_status_display(self, obj):
+        return dict(User.AVAILABILITY_CHOICES).get(obj.availability_status, "Не указано") if obj.availability_status else "Не указано"
 
     def validate_birth_date(self, value):
         """Validate that birth date is not in the future and user is at least 1 year old."""
