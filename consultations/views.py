@@ -112,21 +112,25 @@ class ConsultationViewSet(ModelViewSet):
         Patients start a video consultation with an available doctor.
         """
         user = request.user
-    
+
         if not user.is_authenticated:
             return Response({"error": "User is not authenticated."}, status=status.HTTP_403_FORBIDDEN)
-    
+
         if user.role != "patient":
             return Response({"error": "Only patients can start consultations."}, status=status.HTTP_403_FORBIDDEN)
-    
+
         doctor_id = request.data.get("doctor_id")
         if not doctor_id:
             return Response({"error": "Missing doctor_id."}, status=status.HTTP_400_BAD_REQUEST)
-    
+
         doctor = User.objects.filter(id=doctor_id, role="doctor", is_active=True).first()
         if not doctor:
             return Response({"error": "Selected doctor is not available."}, status=status.HTTP_404_NOT_FOUND)
-    
+
+        # ✅ Extract urgency from request data
+        is_urgent = request.data.get("is_urgent", False)
+        symptoms = request.data.get("symptoms", "")
+
         # 🚫 No longer preventing duplicate consultations
         # existing_consultation = Consultation.objects.filter(patient=user, doctor=doctor, status="pending").first()
         # if existing_consultation:
@@ -134,17 +138,20 @@ class ConsultationViewSet(ModelViewSet):
         #         {"error": "You already have a pending consultation with this doctor.", "meeting_id": existing_consultation.meeting_id},
         #         status=status.HTTP_400_BAD_REQUEST,
         #     )
-    
+
         meeting_id = str(uuid.uuid4())
-    
+
+        # ✅ Create consultation with urgency information
         consultation = Consultation.objects.create(
             patient=user,
             doctor=doctor,
             meeting_id=meeting_id,
             status="pending",
+            is_urgent=is_urgent,
         )
     
-        print(f"🔔 Doctor {doctor.email} received a consultation request from {user.email}")
+        urgency_text = "URGENT" if is_urgent else "non-urgent"
+        print(f"🔔 Doctor {doctor.email} received a {urgency_text} consultation request from {user.email}")
     
         return Response(
             {

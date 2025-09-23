@@ -12,6 +12,7 @@ def consultation_created_signal(sender, instance, created, **kwargs):
     """
     Send WebSocket notification when a new consultation is created
     """
+    logger.info(f"🔔 consultation_created_signal triggered: created={created}, status={instance.status}, id={instance.id}")
     channel_layer = get_channel_layer()
 
     if not channel_layer:
@@ -111,15 +112,27 @@ def consultation_status_change_signal(sender, instance, **kwargs):
                 'scheduled_at': instance.scheduled_at.isoformat() if instance.scheduled_at else None,
             }
 
+            # Send to all doctors
             async_to_sync(channel_layer.group_send)(
-                "doctors",  # Send to all doctors
+                "doctors",
                 {
                     'type': 'consultation_status_changed',
                     'consultation': consultation_data,
                     'timestamp': instance.created_at.isoformat()
                 }
             )
-            logger.info(f"WebSocket status change notification sent for consultation {instance.id}")
+
+            # ✅ Also send to the specific patient
+            async_to_sync(channel_layer.group_send)(
+                f"user_{instance.patient.id}",
+                {
+                    'type': 'consultation_status_changed',
+                    'consultation': consultation_data,
+                    'timestamp': instance.created_at.isoformat()
+                }
+            )
+
+            logger.info(f"WebSocket status change notification sent to doctors and patient {instance.patient.email} for consultation {instance.id}")
 
     except Consultation.DoesNotExist:
         # Instance doesn't exist yet, skip
