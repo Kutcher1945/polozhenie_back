@@ -333,11 +333,10 @@ class UserViewSet(ModelViewSet):
     def get_available_doctors(self, request):
         """Fetch a list of available doctors."""
         # Optimize query to avoid N+1 problem by prefetching specializations
-        # Only show available doctors
+        # Show all active doctors (regardless of availability status for real-time updates)
         doctors = User.objects.filter(
             role="doctor",
-            is_active=True,
-            availability_status='available'
+            is_active=True
         ).select_related('doctor_specialization')
 
         if not doctors.exists():
@@ -364,6 +363,8 @@ class UserViewSet(ModelViewSet):
                 "name": f"{doctor.first_name} {doctor.last_name}",
                 "email": doctor.email,
                 "doctor_type": specialization,
+                "availability_status": doctor.availability_status or 'offline',
+                "availability_note": doctor.availability_note or '',
                 # Include additional specialization details
                 "specialization": {
                     "id": doctor.doctor_specialization.id if doctor.doctor_specialization else None,

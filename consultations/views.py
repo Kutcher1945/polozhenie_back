@@ -564,10 +564,11 @@ class ConsultationViewSet(ModelViewSet):
                 logger.warning(f"📥 Сырой ответ от AI (urgency):\n{urgency_reply}")
                 return Response({"success": False, "error": "Invalid AI response format", "raw_specialty": specialty_reply, "raw_reason": reason_reply, "raw_urgency": urgency_reply}, status=200)
     
-            # Query doctors based on the specialty (in Russian)
+            # Query doctors based on the specialty (in Russian) - only available doctors
             doctors = list(User.objects.filter(
                 role="doctor",
                 is_active=True,
+                availability_status='available',  # Only recommend available doctors
                 doctor_specialization__name_ru__icontains=specialty
             )[:10])
     
