@@ -180,11 +180,11 @@ CHANNEL_LAYERS = {
 DATABASES = {
     'default': {
         'ENGINE': 'django.contrib.gis.db.backends.postgis',
-        'NAME': 'db_core',
-        'USER': 'itry',
-        'PASSWORD': 'admin123456@',
-        'HOST': '10.100.200.150',
-        'PORT': '5439',
+        'NAME': 'core_db',
+        'USER': 'core',
+        'PASSWORD': '4HPzQt2HyU',
+        'HOST': '10.100.200.151',
+        'PORT': '5432',
     }
 }
 
