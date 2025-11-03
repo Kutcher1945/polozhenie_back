@@ -9,8 +9,8 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 logging.basicConfig(level=logging.INFO)
 
 # ⚠️ You can keep the token hardcoded for testing, but in production use environment variables
-BOT_TOKEN = "8586849826:AAG4bdQGrXgTW7LhH5U_s2b1sx3XRug6gJQ" # DEVELOPMENT
-# BOT_TOKEN = "8364913089:AAG5rK07-jHVgf1Uspgyf1sgXnkrKXH0ngw" # PRODUCTION
+# BOT_TOKEN = "8586849826:AAG4bdQGrXgTW7LhH5U_s2b1sx3XRug6gJQ" # DEVELOPMENT
+BOT_TOKEN = "8364913089:AAG5rK07-jHVgf1Uspgyf1sgXnkrKXH0ngw" # PRODUCTION
 
 if not BOT_TOKEN:
     raise ValueError("⚠️ BOT_TOKEN not set")
