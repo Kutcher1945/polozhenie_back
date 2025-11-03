@@ -213,7 +213,7 @@ async def support_callback(callback: types.CallbackQuery):
 Мы всегда готовы помочь вам!
 
 <b>📱 Контакты:</b>
-• WhatsApp: +7 (XXX) XXX-XX-XX
+• WhatsApp: +7 (775) 824-96-86
 • Telegram: @zhancare_support
 • Email: support@zhan.care
 
