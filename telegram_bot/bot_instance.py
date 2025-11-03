@@ -36,7 +36,7 @@ async def start_cmd(message: types.Message):
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="Войти",
+                    text="🏥 Открыть ZhanCare",
                     web_app=WebAppInfo(url="https://www.zhan.care/telegram-auth")
                 )
             ],
