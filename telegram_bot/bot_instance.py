@@ -3,7 +3,9 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 import asyncio
 import logging
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo, MenuButtonWebApp
+import requests
+import json
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo, MenuButtonWebApp, ReplyKeyboardMarkup, KeyboardButton
 
 
 logging.basicConfig(level=logging.INFO)
@@ -21,9 +23,87 @@ if not BOT_TOKEN:
 if not BOT_TOKEN:
     raise ValueError("❌ TELEGRAM_BOT_TOKEN not set and no fallback available")
 
+# Function to get Mistral API key (lazy loading from Django settings)
+def get_mistral_api_key():
+    """Get Mistral API key from Django settings"""
+    try:
+        from django.conf import settings
+        api_key = getattr(settings, 'MISTRAL_API_KEY', None)
+        if api_key:
+            logger.info("✅ Mistral API key loaded from Django settings")
+        else:
+            logger.warning("⚠️ MISTRAL_API_KEY not found in Django settings")
+        return api_key
+    except Exception as e:
+        logger.error(f"❌ Error loading Mistral API key: {e}")
+        return None
+
 # Initialize bot and dispatcher
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
+
+# === Helper Functions ===
+async def get_conversational_ai_response(user_message: str):
+    """Get conversational AI response for any user message"""
+    # Get API key from Django settings
+    MISTRAL_API_KEY = get_mistral_api_key()
+
+    if not MISTRAL_API_KEY:
+        logger.warning("⚠️ MISTRAL_API_KEY not available, AI response disabled")
+        return None
+
+    system_prompt = """
+    You are a friendly and helpful medical assistant for ZhanCare, a telemedicine platform in Kazakhstan.
+
+    Your role:
+    - Answer medical and health questions in a clear, simple way
+    - Be warm, conversational and empathetic
+    - Always respond in Russian language
+    - Keep responses short and concise (2-3 sentences)
+    - Provide general health information only, no specific diagnoses
+    - For serious symptoms, suggest consulting a doctor
+    - For greetings, respond warmly
+
+    Guidelines:
+    - Be natural and friendly
+    - Use simple language
+    - No emojis unless greeting
+    - No HTML formatting
+    - Keep it brief and helpful
+    """
+
+    try:
+        headers = {
+            "Authorization": f"Bearer {MISTRAL_API_KEY}",
+            "Content-Type": "application/json"
+        }
+
+        payload = {
+            "model": "open-mistral-nemo",
+            "temperature": 0.7,
+            "top_p": 1,
+            "max_tokens": 300,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message}
+            ],
+        }
+
+        # Send request
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(
+            None,
+            lambda: requests.post("https://api.mistral.ai/v1/chat/completions", json=payload, headers=headers)
+        )
+
+        response.raise_for_status()
+        ai_reply = response.json()["choices"][0]["message"]["content"].strip()
+
+        return ai_reply
+
+    except Exception as e:
+        logger.error(f"❌ Conversational AI error: {e}")
+        return None
 
 # === Handlers ===
 @dp.message(Command("start"))
@@ -152,12 +232,43 @@ async def support_callback(callback: types.CallbackQuery):
 
 @dp.message()
 async def echo(message: types.Message):
-    """Handle all other messages"""
-    await message.answer(
-        f"Спасибо за сообщение! 💬\n\n"
-        f"Для использования сервиса нажмите /start и выберите нужную услугу.",
-        parse_mode="HTML"
+    """Handle all other messages with conversational AI"""
+    user_message = message.text
+
+    # Show typing indicator
+    await message.bot.send_chat_action(message.chat.id, "typing")
+
+    # Try to get AI response
+    ai_response = await get_conversational_ai_response(user_message)
+
+    # Create keyboard with app button (always shown)
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🏥 Открыть ZhanCare",
+                    web_app=WebAppInfo(url="https://www.zhan.care/telegram-auth")
+                )
+            ]
+        ]
     )
+
+    if ai_response:
+        # AI response available
+        await message.answer(
+            ai_response,
+            reply_markup=keyboard
+        )
+        logger.info(f"✅ AI response sent to user {message.from_user.id}")
+    else:
+        # AI unavailable - show friendly fallback
+        await message.answer(
+            f"Спасибо за сообщение! 💬\n\n"
+            f"Я медицинский ассистент ZhanCare. К сожалению, сейчас я не могу обработать ваш запрос.\n\n"
+            f"Для консультации с врачом откройте приложение ZhanCare.",
+            reply_markup=keyboard
+        )
+        logger.info(f"ℹ️ Fallback response sent to user {message.from_user.id} (AI unavailable)")
 
 # === Run polling safely ===
 async def run_polling():
