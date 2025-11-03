@@ -35,3 +35,4 @@ livekit-api
 fuzzywuzzy
 geopy
 websockets
+aiogram
