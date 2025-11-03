@@ -7,13 +7,18 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 
 
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# ⚠️ You can keep the token hardcoded for testing, but in production use environment variables
-# BOT_TOKEN = "8586849826:AAG4bdQGrXgTW7LhH5U_s2b1sx3XRug6gJQ" # DEVELOPMENT
-BOT_TOKEN = "8364913089:AAG5rK07-jHVgf1Uspgyf1sgXnkrKXH0ngw" # PRODUCTION
+# Get token from environment variable (production-safe)
+BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+
+# Fallback to development token if not in production
+if not BOT_TOKEN:
+    BOT_TOKEN = "8586849826:AAG4bdQGrXgTW7LhH5U_s2b1sx3XRug6gJQ"  # DEVELOPMENT FALLBACK
+    logger.warning("⚠️ Using fallback DEVELOPMENT token. Set TELEGRAM_BOT_TOKEN env variable for production!")
 
 if not BOT_TOKEN:
-    raise ValueError("⚠️ BOT_TOKEN not set")
+    raise ValueError("❌ TELEGRAM_BOT_TOKEN not set and no fallback available")
 
 # Initialize bot and dispatcher
 bot = Bot(token=BOT_TOKEN)
@@ -45,5 +50,9 @@ async def echo(message: types.Message):
 # === Run polling safely ===
 async def run_polling():
     """Start bot polling (safe for threads)."""
-    print("🚀 Starting Aiogram polling (handle_signals=False)...")
-    await dp.start_polling(bot, handle_signals=False)
+    try:
+        logger.info("🚀 Starting Aiogram polling (handle_signals=False)...")
+        await dp.start_polling(bot, handle_signals=False)
+    except Exception as e:
+        logger.error(f"❌ Bot polling error: {e}")
+        raise
