@@ -11,10 +11,11 @@ logger = logging.getLogger(__name__)
 
 # Get token from environment variable (production-safe)
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
-
+# BOT_TOKEN = "8364913089:AAG5rK07-jHVgf1Uspgyf1sgXnkrKXH0ngw" # Production token
+# BOT_TOKEN  = "8586849826:AAG4bdQGrXgTW7LhH5U_s2b1sx3XRug6gJQ" # Development token
 # Fallback to development token if not in production
 if not BOT_TOKEN:
-    BOT_TOKEN = "8586849826:AAG4bdQGrXgTW7LhH5U_s2b1sx3XRug6gJQ"  # DEVELOPMENT FALLBACK
+    BOT_TOKEN = "8364913089:AAG5rK07-jHVgf1Uspgyf1sgXnkrKXH0ngw"  # DEVELOPMENT FALLBACK
     logger.warning("⚠️ Using fallback DEVELOPMENT token. Set TELEGRAM_BOT_TOKEN env variable for production!")
 
 if not BOT_TOKEN:
