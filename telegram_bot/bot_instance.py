@@ -3,7 +3,7 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 import asyncio
 import logging
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo, MenuButtonWebApp
 
 
 logging.basicConfig(level=logging.INFO)
@@ -28,25 +28,136 @@ dp = Dispatcher()
 # === Handlers ===
 @dp.message(Command("start"))
 async def start_cmd(message: types.Message):
+    """Welcome message with beautiful design"""
+    user_name = message.from_user.first_name or "друг"
+
+    # Create beautiful inline keyboard
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="🌐 Open Web App",
-                    web_app=WebAppInfo(url="https://www.zhan.care/telegram-auth")  # Replace with your real URL
+                    text="Войти",
+                    web_app=WebAppInfo(url="https://www.zhan.care/telegram-auth")
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="📞 Видео Консультация",
+                    web_app=WebAppInfo(url="https://www.zhan.care/telegram-auth")
+                ),
+                InlineKeyboardButton(
+                    text="🏠 Вызов на дом",
+                    web_app=WebAppInfo(url="https://www.zhan.care/telegram-auth")
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="💊 Анализы",
+                    web_app=WebAppInfo(url="https://www.zhan.care/telegram-auth")
+                ),
+                InlineKeyboardButton(
+                    text="📋 Медкарта",
+                    web_app=WebAppInfo(url="https://www.zhan.care/telegram-auth")
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="ℹ️ О сервисе",
+                    callback_data="about"
+                ),
+                InlineKeyboardButton(
+                    text="📞 Поддержка",
+                    callback_data="support"
                 )
             ]
         ]
     )
 
+    welcome_message = f"""
+👋 <b>Здравствуйте, {user_name}!</b>
+
+Добро пожаловать в <b>ZhanCare</b> — вашу современную медицинскую платформу! 🏥
+
+<b>🎯 Наши услуги:</b>
+
+📞 <b>Видео Консультация</b>
+Онлайн консультации с врачами
+
+🏠 <b>Вызов врача на дом</b>
+Профессиональная помощь у вас дома
+
+💊 <b>Анализы и обследования</b>
+Запись и результаты в одном месте
+
+📋 <b>Электронная медкарта</b>
+Вся история болезни под рукой
+
+✨ <b>Нажмите "Открыть ZhanCare" для начала работы!</b>
+"""
+
     await message.answer(
-        "🤖 Bot is running with Django server!\n\nClick below to open the web app 👇",
-        reply_markup=keyboard
+        welcome_message,
+        reply_markup=keyboard,
+        parse_mode="HTML"
     )
+
+@dp.callback_query(lambda c: c.data == "about")
+async def about_callback(callback: types.CallbackQuery):
+    """About service information"""
+    about_text = """
+<b>🏥 О ZhanCare</b>
+
+ZhanCare — это современная телемедицинская платформа, которая делает медицинскую помощь доступной для каждого.
+
+<b>✨ Почему выбирают нас:</b>
+
+✅ Консультации с квалифицированными врачами
+✅ Быстрая запись и удобное расписание
+✅ Безопасное хранение медицинских данных
+✅ Доступные цены и прозрачность
+✅ Поддержка 24/7
+
+<b>🌐 Наш сайт:</b> www.zhan.care
+<b>📧 Email:</b> support@zhan.care
+"""
+
+    await callback.message.answer(about_text, parse_mode="HTML")
+    await callback.answer()
+
+@dp.callback_query(lambda c: c.data == "support")
+async def support_callback(callback: types.CallbackQuery):
+    """Support contact information"""
+    support_text = """
+<b>📞 Служба поддержки</b>
+
+Мы всегда готовы помочь вам!
+
+<b>📱 Контакты:</b>
+• WhatsApp: +7 (XXX) XXX-XX-XX
+• Telegram: @zhancare_support
+• Email: support@zhan.care
+
+<b>⏰ Часы работы:</b>
+Пн-Пт: 9:00 - 20:00
+Сб-Вс: 10:00 - 18:00
+
+<b>🚨 Экстренная помощь:</b>
+Доступна 24/7 через приложение
+
+Напишите нам, и мы ответим в ближайшее время! 💬
+"""
+
+    await callback.message.answer(support_text, parse_mode="HTML")
+    await callback.answer()
 
 @dp.message()
 async def echo(message: types.Message):
-    await message.answer(f"You said: {message.text}")
+    """Handle all other messages"""
+    await message.answer(
+        f"Спасибо за сообщение! 💬\n\n"
+        f"Для использования сервиса нажмите /start и выберите нужную услугу.",
+        parse_mode="HTML"
+    )
 
 # === Run polling safely ===
 async def run_polling():
