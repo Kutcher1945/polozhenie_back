@@ -14,7 +14,8 @@ class HomeAppointment(BaseModel):
         'common.User', on_delete=models.CASCADE, related_name='home_appointments', verbose_name="Пациент"
     )
     doctor = models.ForeignKey(
-        'common.User', on_delete=models.CASCADE, related_name='home_doctor_appointments', verbose_name="Врач"
+        'common.User', on_delete=models.SET_NULL, related_name='home_doctor_appointments',
+        null=True, blank=True, verbose_name="Врач"
     )
     nurse = models.ForeignKey(
         'common.User', on_delete=models.SET_NULL, related_name='home_nurse_appointments',
@@ -22,6 +23,12 @@ class HomeAppointment(BaseModel):
     )
     appointment_time = models.DateTimeField(verbose_name="Дата и время вызова")
     address = models.CharField(max_length=255, verbose_name="Адрес вызова")
+    latitude = models.DecimalField(
+        max_digits=9, decimal_places=6, null=True, blank=True, verbose_name="Широта"
+    )
+    longitude = models.DecimalField(
+        max_digits=9, decimal_places=6, null=True, blank=True, verbose_name="Долгота"
+    )
     symptoms = models.TextField(blank=True, null=True, verbose_name="Симптомы")
     notes = models.TextField(blank=True, null=True, verbose_name="Заметки")
     status = models.CharField(

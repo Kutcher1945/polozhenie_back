@@ -18,10 +18,10 @@ class HomeAppointmentSerializer(serializers.ModelSerializer):
             'patient', 'patient_name', 'patient_first_name', 'patient_last_name', 'patient_phone',
             'doctor', 'doctor_first_name', 'doctor_last_name',
             'nurse', 'nurse_first_name', 'nurse_last_name',
-            'appointment_time', 'address',
+            'appointment_time', 'address', 'latitude', 'longitude',
             'status',
             'symptoms',
             'notes',
             'created_at'
         ]
-        read_only_fields = ['created_at', 'patient']
+        read_only_fields = ['created_at', 'patient', 'nurse']
