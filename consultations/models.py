@@ -135,6 +135,19 @@ class Consultation(BaseModel):
     started_at = models.DateTimeField(null=True, blank=True, verbose_name="Время начала")
     ended_at = models.DateTimeField(null=True, blank=True, verbose_name="Время завершения")
 
+    # Consultation form data (filled by doctor during video call)
+    complaints = models.TextField(blank=True, null=True, verbose_name="Жалобы пациента")
+    anamnesis = models.TextField(blank=True, null=True, verbose_name="Анамнез")
+    diagnostics = models.TextField(blank=True, null=True, verbose_name="Диагностика")
+    treatment = models.TextField(blank=True, null=True, verbose_name="Лечение и рекомендации")
+    diagnosis = models.TextField(blank=True, null=True, verbose_name="Диагноз")
+
+    # Additional consultation data
+    session_notes = models.TextField(blank=True, null=True, verbose_name="Заметки консультации")
+    prescription = models.TextField(blank=True, null=True, verbose_name="Рецепт")
+    recommendations = models.TextField(blank=True, null=True, verbose_name="Рекомендации")
+    transcription = models.TextField(blank=True, null=True, verbose_name="Транскрипция")
+
     def clean(self):
         """Validate consultation constraints"""
         if self.is_urgent and self.timeslot:

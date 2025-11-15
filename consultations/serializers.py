@@ -70,7 +70,11 @@ class ConsultationSerializer(serializers.ModelSerializer):
             "meeting_id", "status", "is_urgent", "scheduled_at",
             "started_at", "ended_at", "created_at",
             "timeslot", "ai_recommendation",
-            "is_scheduled_soon", "consultation_type"
+            "is_scheduled_soon", "consultation_type",
+            # Consultation form fields
+            "complaints", "anamnesis", "diagnostics", "treatment", "diagnosis",
+            # Additional consultation data
+            "session_notes", "prescription", "recommendations", "transcription"
         ]
         read_only_fields = ["started_at", "ended_at", "created_at"]
 

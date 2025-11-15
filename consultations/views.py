@@ -660,3 +660,48 @@ class ConsultationViewSet(ModelViewSet):
 
         serializer = self.get_serializer(consultations, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["patch"], url_path="save-consultation-form")
+    def save_consultation_form(self, request, meeting_id=None):
+        """
+        Save consultation form data (filled by doctor during video call)
+
+        PATCH /api/v1/consultations/{meeting_id}/save-consultation-form/
+        {
+            "complaints": "Patient complaints...",
+            "anamnesis": "Medical history...",
+            "diagnostics": "Diagnostic results...",
+            "treatment": "Treatment plan...",
+            "diagnosis": "Final diagnosis..."
+        }
+        """
+        user = request.user
+        consultation = self.get_object()
+
+        # Only doctors can save consultation forms
+        if user.role != "doctor" or consultation.doctor != user:
+            return Response(
+                {"error": "Only the assigned doctor can save consultation form data."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Update consultation form fields
+        consultation.complaints = request.data.get("complaints", consultation.complaints)
+        consultation.anamnesis = request.data.get("anamnesis", consultation.anamnesis)
+        consultation.diagnostics = request.data.get("diagnostics", consultation.diagnostics)
+        consultation.treatment = request.data.get("treatment", consultation.treatment)
+        consultation.diagnosis = request.data.get("diagnosis", consultation.diagnosis)
+
+        # Update additional consultation data
+        consultation.session_notes = request.data.get("session_notes", consultation.session_notes)
+        consultation.prescription = request.data.get("prescription", consultation.prescription)
+        consultation.recommendations = request.data.get("recommendations", consultation.recommendations)
+        consultation.transcription = request.data.get("transcription", consultation.transcription)
+
+        consultation.save()
+
+        serializer = self.get_serializer(consultation)
+        return Response({
+            "message": "Consultation form saved successfully",
+            "consultation": serializer.data
+        }, status=status.HTTP_200_OK)
