@@ -14,7 +14,7 @@ from django.db.models import Q
 from django.contrib.auth.hashers import make_password
 from .models import User, CustomToken
 from .serializers import UserSerializer, UserProfileSerializer
-from .permissions import IsDoctor, IsAdmin
+from .permissions import IsDoctor, IsAdmin, IsNurse
 from .utils.email_utils import send_password_reset_email
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.http import JsonResponse
@@ -323,6 +323,11 @@ class UserViewSet(ModelViewSet):
     @action(detail=False, methods=["get"], permission_classes=[IsAdmin])
     def admin_panel(self, request):
         return Response({"message": "Welcome, Admin!"})
+    
+    @swagger_auto_schema(operation_description="Nurse Dashboard")
+    @action(detail=False, methods=["get"], permission_classes=[IsNurse])
+    def nurse_dashboard(self, request):
+        return Response({"message": "Welcome, Nurse!"})
 
     # ✅ New endpoint to fetch available doctors
     @swagger_auto_schema(
@@ -376,6 +381,58 @@ class UserViewSet(ModelViewSet):
 
         return Response({"doctors": doctor_list}, status=status.HTTP_200_OK)
 
+    # ✅ New endpoint to fetch available nurses
+    @swagger_auto_schema(
+        operation_description="Get available nurses",
+        responses={200: "List of available nurses"},
+    )
+    @action(detail=False, methods=["get"], url_path="nurse/available")
+    def get_available_nurses(self, request):
+        """Fetch a list of available nurses."""
+        # Optimize query to avoid N+1 problem by prefetching specializations
+        # Show all active nurses (regardless of availability status for real-time updates)
+        nurses = User.objects.filter(
+            role="nurse",
+            is_active=True
+        ).select_related('nurse_specialization')
+
+        if not nurses.exists():
+            return Response({"error": "No available nurses found."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Get language preference from request (default to Russian)
+        language = request.GET.get('lang', 'ru')
+
+        nurse_list = []
+        for nurse in nurses:
+            # Get specialization in requested language
+            if nurse.nurse_specialization:
+                if language == 'kz':
+                    specialization = nurse.nurse_specialization.name_kz
+                elif language == 'en':
+                    specialization = nurse.nurse_specialization.name_en
+                else:
+                    specialization = nurse.nurse_specialization.name_ru
+            else:
+                specialization = nurse.nurse_type or "Специальность не указана"
+
+            nurse_list.append({
+                "id": nurse.id,
+                "name": f"{nurse.first_name} {nurse.last_name}",
+                "email": nurse.email,
+                "nurse_type": specialization,
+                "availability_status": nurse.availability_status or 'offline',
+                "availability_note": nurse.availability_note or '',
+                # Include additional specialization details
+                "specialization": {
+                    "id": nurse.nurse_specialization.id if nurse.nurse_specialization else None,
+                    "name_ru": nurse.nurse_specialization.name_ru if nurse.nurse_specialization else None,
+                    "name_kz": nurse.nurse_specialization.name_kz if nurse.nurse_specialization else None,
+                    "name_en": nurse.nurse_specialization.name_en if nurse.nurse_specialization else None,
+                } if nurse.nurse_specialization else None
+            })
+
+        return Response({"nurses": nurse_list}, status=status.HTTP_200_OK)
+
     @swagger_auto_schema(
         operation_description="Get user profile field choices",
         responses={200: "List of field choices for user profile"},
@@ -393,14 +450,14 @@ class UserViewSet(ModelViewSet):
         return Response(choices, status=status.HTTP_200_OK)
 
     @swagger_auto_schema(
-        operation_description="Update doctor availability status",
+        operation_description="Update doctor or nurse availability status",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             properties={
                 "availability_status": openapi.Schema(
                     type=openapi.TYPE_STRING,
                     enum=['available', 'busy', 'offline', 'break'],
-                    description="Doctor's availability status"
+                    description="Availability status"
                 ),
                 "availability_note": openapi.Schema(
                     type=openapi.TYPE_STRING,
@@ -412,12 +469,12 @@ class UserViewSet(ModelViewSet):
         responses={
             200: "Availability updated successfully",
             400: "Invalid status",
-            403: "Only doctors can update availability"
+            403: "Only doctors and nurses can update availability"
         },
     )
     @action(detail=False, methods=["patch"], url_path="update-availability")
     def update_availability(self, request):
-        """Update doctor's availability status"""
+        """Update doctor or nurse availability status"""
         from channels.layers import get_channel_layer
         from asgiref.sync import async_to_sync
 
@@ -447,17 +504,17 @@ class UserViewSet(ModelViewSet):
             print("[ERROR] Authentication error:", str(e))
             return Response({'error': 'Authentication error'}, status=status.HTTP_401_UNAUTHORIZED)
 
-        # Check if user is a doctor (case-insensitive)
+        # Check if user is a doctor or nurse (case-insensitive)
         user_role = getattr(user, 'role', '').strip().lower()
         print("[DEBUG] Final resolved user:", user)
         print("[DEBUG] user.id:", getattr(user, "id", None))
         print("[DEBUG] user.email:", getattr(user, "email", None))
         print("[DEBUG] user.role:", user_role)
 
-        if user_role != 'doctor':
-            print("[DEBUG] Role check failed. Expected 'doctor', got:", user_role)
+        if user_role not in ['doctor', 'nurse']:
+            print("[DEBUG] Role check failed. Expected 'doctor' or 'nurse', got:", user_role)
             return Response(
-                {"error": "Only doctors can update availability status", "debug_role": user_role},
+                {"error": "Only doctors and nurses can update availability status", "debug_role": user_role},
                 status=status.HTTP_403_FORBIDDEN
             )
 
@@ -486,17 +543,29 @@ class UserViewSet(ModelViewSet):
         channel_layer = get_channel_layer()
         if channel_layer:
             try:
+                # Determine specialization based on role
+                if user_role == 'doctor':
+                    specialization = user.doctor_specialization.name_ru if user.doctor_specialization else user.doctor_type
+                    event_type = 'doctor_availability_changed'
+                    user_id_key = 'doctor_id'
+                    user_info_key = 'doctor_info'
+                else:  # nurse
+                    specialization = user.nurse_specialization.name_ru if user.nurse_specialization else user.nurse_type
+                    event_type = 'nurse_availability_changed'
+                    user_id_key = 'nurse_id'
+                    user_info_key = 'nurse_info'
+
                 payload = {
-                    'type': 'doctor_availability_changed',
-                    'doctor_id': user.id,
+                    'type': event_type,
+                    user_id_key: user.id,
                     'availability_status': availability_status,
                     'availability_note': availability_note,
                     'old_status': old_status,
-                    'doctor_info': {
+                    user_info_key: {
                         'id': user.id,
                         'name': f"{user.first_name} {user.last_name}",
                         'email': user.email,
-                        'specialization': user.doctor_specialization.name_ru if user.doctor_specialization else user.doctor_type
+                        'specialization': specialization
                     }
                 }
 
@@ -506,7 +575,7 @@ class UserViewSet(ModelViewSet):
                 # Also send to consultation clients
                 async_to_sync(channel_layer.group_send)("consultations", payload)
 
-                logger.info(f"Doctor {user.email} availability changed from {old_status} to {availability_status}")
+                logger.info(f"{user_role.capitalize()} {user.email} availability changed from {old_status} to {availability_status}")
             except Exception as e:
                 print("[ERROR] Failed to broadcast availability change:", str(e))
                 logger.error(f"Failed to broadcast availability change: {str(e)}")
@@ -729,14 +798,14 @@ class UserProfileViewSet(ViewSet):
             return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
 
     @swagger_auto_schema(
-        operation_description="Update doctor availability status",
+        operation_description="Update doctor or nurse availability status",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             properties={
                 "availability_status": openapi.Schema(
                     type=openapi.TYPE_STRING,
                     enum=['available', 'busy', 'offline', 'break'],
-                    description="Doctor's availability status"
+                    description="Availability status"
                 ),
                 "availability_note": openapi.Schema(
                     type=openapi.TYPE_STRING,
@@ -748,15 +817,15 @@ class UserProfileViewSet(ViewSet):
         responses={
             200: "Availability updated successfully",
             400: "Invalid status",
-            403: "Only doctors can update availability"
+            403: "Only doctors and nurses can update availability"
         },
     )
     @action(detail=False, methods=["patch"], url_path="update-availability")
     def update_availability(self, request):
-        """Update doctor's availability status"""
+        """Update doctor or nurse availability status"""
         from channels.layers import get_channel_layer
         from asgiref.sync import async_to_sync
-    
+
         # Get the authenticated user
         try:
             if hasattr(request.user, 'role'):
@@ -767,11 +836,11 @@ class UserProfileViewSet(ViewSet):
                 from common.models import CustomToken
                 auth_header = request.META.get('HTTP_AUTHORIZATION', '')
                 print("[DEBUG] Auth header:", auth_header)
-    
+
                 if auth_header.startswith('Token '):
                     token_key = auth_header.split(' ')[1]
                     print("[DEBUG] Token key:", token_key)
-    
+
                     token = CustomToken.objects.select_related('user').get(key=token_key)
                     user = token.user
                     print("[DEBUG] User from token:", user)
@@ -782,18 +851,18 @@ class UserProfileViewSet(ViewSet):
         except Exception as e:
             print("[ERROR] Authentication error:", str(e))
             return Response({'error': 'Authentication error'}, status=status.HTTP_401_UNAUTHORIZED)
-    
-        # Check if user is a doctor (case-insensitive)
+
+        # Check if user is a doctor or nurse (case-insensitive)
         user_role = getattr(user, 'role', '').strip().lower()
         print("[DEBUG] Final resolved user:", user)
         print("[DEBUG] user.id:", getattr(user, "id", None))
         print("[DEBUG] user.email:", getattr(user, "email", None))
         print("[DEBUG] user.role:", user_role)
-    
-        if user_role != 'doctor':
-            print("[DEBUG] Role check failed. Expected 'doctor', got:", user_role)
+
+        if user_role not in ['doctor', 'nurse']:
+            print("[DEBUG] Role check failed. Expected 'doctor' or 'nurse', got:", user_role)
             return Response(
-                {"error": "Only doctors can update availability status", "debug_role": user_role},
+                {"error": "Only doctors and nurses can update availability status", "debug_role": user_role},
                 status=status.HTTP_403_FORBIDDEN
             )
     
@@ -822,27 +891,39 @@ class UserProfileViewSet(ViewSet):
         channel_layer = get_channel_layer()
         if channel_layer:
             try:
+                # Determine specialization based on role
+                if user_role == 'doctor':
+                    specialization = user.doctor_specialization.name_ru if user.doctor_specialization else user.doctor_type
+                    event_type = 'doctor_availability_changed'
+                    user_id_key = 'doctor_id'
+                    user_info_key = 'doctor_info'
+                else:  # nurse
+                    specialization = user.nurse_specialization.name_ru if user.nurse_specialization else user.nurse_type
+                    event_type = 'nurse_availability_changed'
+                    user_id_key = 'nurse_id'
+                    user_info_key = 'nurse_info'
+
                 payload = {
-                    'type': 'doctor_availability_changed',
-                    'doctor_id': user.id,
+                    'type': event_type,
+                    user_id_key: user.id,
                     'availability_status': availability_status,
                     'availability_note': availability_note,
                     'old_status': old_status,
-                    'doctor_info': {
+                    user_info_key: {
                         'id': user.id,
                         'name': f"{user.first_name} {user.last_name}",
                         'email': user.email,
-                        'specialization': user.doctor_specialization.name_ru if user.doctor_specialization else user.doctor_type
+                        'specialization': specialization
                     }
                 }
-    
+
                 # Send to all Socket.IO clients
                 async_to_sync(channel_layer.group_send)("socketio_clients", payload)
-    
+
                 # Also send to consultation clients
                 async_to_sync(channel_layer.group_send)("consultations", payload)
-    
-                logger.info(f"Doctor {user.email} availability changed from {old_status} to {availability_status}")
+
+                logger.info(f"{user_role.capitalize()} {user.email} availability changed from {old_status} to {availability_status}")
             except Exception as e:
                 print("[ERROR] Failed to broadcast availability change:", str(e))
                 logger.error(f"Failed to broadcast availability change: {str(e)}")
