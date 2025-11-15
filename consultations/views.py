@@ -661,6 +661,85 @@ class ConsultationViewSet(ModelViewSet):
         serializer = self.get_serializer(consultations, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    @action(detail=False, methods=["get"], url_path="patient-latest")
+    def patient_latest_consultation(self, request):
+        """
+        Get patient's aggregated consultation history
+        Used by nurses to view patient's medical history
+
+        GET /api/v1/consultations/patient-latest/?patient_id=123
+
+        Returns an aggregated view with the latest non-null value for each field
+        across all completed consultations
+        """
+        patient_id = request.query_params.get("patient_id")
+
+        if not patient_id:
+            return Response(
+                {"error": "patient_id is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        from django.db.models import Q
+
+        # Get all consultations for this patient (any status), ordered by most recent first
+        # We include all statuses to ensure we capture data from ongoing/completed consultations
+        consultations = Consultation.objects.filter(
+            patient_id=patient_id
+        ).exclude(
+            status__in=["cancelled", "missed"]  # Exclude cancelled/missed consultations
+        ).order_by("-created_at")
+
+        if not consultations.exists():
+            return Response(
+                {"message": "No consultation history found for this patient"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Helper function to check if a value is valid (not null, not empty, not "<null>")
+        def is_valid_value(value):
+            return value and value != '' and value != '<null>'
+
+        # Aggregate data: find the latest non-null value for each field
+        aggregated_data = {
+            'complaints': None,
+            'anamnesis': None,
+            'diagnostics': None,
+            'treatment': None,
+            'diagnosis': None,
+            'session_notes': None,
+            'prescription': None,
+            'recommendations': None,
+            'transcription': None,
+        }
+
+        # Track metadata from the most recent consultation
+        most_recent = consultations.first()
+
+        # Iterate through consultations to find latest valid value for each field
+        for consultation in consultations:
+            for field in aggregated_data.keys():
+                # If we haven't found a value for this field yet
+                if aggregated_data[field] is None:
+                    value = getattr(consultation, field, None)
+                    if is_valid_value(value):
+                        aggregated_data[field] = value
+
+        # Build response with aggregated data + metadata from most recent consultation
+        response_data = {
+            'id': most_recent.id,
+            'patient_first_name': most_recent.patient.first_name,
+            'patient_last_name': most_recent.patient.last_name,
+            'doctor_first_name': most_recent.doctor.first_name,
+            'doctor_last_name': most_recent.doctor.last_name,
+            'ended_at': most_recent.ended_at,
+            'scheduled_at': most_recent.scheduled_at,
+            'created_at': most_recent.created_at,
+            **aggregated_data  # Add all the aggregated consultation data
+        }
+
+        return Response(response_data, status=status.HTTP_200_OK)
+
     @action(detail=True, methods=["patch"], url_path="save-consultation-form")
     def save_consultation_form(self, request, meeting_id=None):
         """
