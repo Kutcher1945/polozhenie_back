@@ -7,7 +7,7 @@ class HomeAppointmentSerializer(serializers.ModelSerializer):
     patient_name = serializers.CharField(source='patient.get_full_name', read_only=True)
     patient_first_name = serializers.CharField(source='patient.first_name', read_only=True)
     patient_last_name = serializers.CharField(source='patient.last_name', read_only=True)
-    patient_phone = serializers.CharField(source='patient.phone_number', read_only=True)
+    patient_phone = serializers.CharField(source='patient.phone', read_only=True)
     nurse_first_name = serializers.CharField(source='nurse.first_name', read_only=True)
     nurse_last_name = serializers.CharField(source='nurse.last_name', read_only=True)
 
