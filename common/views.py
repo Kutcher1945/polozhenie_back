@@ -150,13 +150,13 @@ class UserViewSet(ModelViewSet):
     def login(self, request):
         """Handles user login using email and password."""
 
-        email = request.data.get("email", "").strip().lower()
+        email = request.data.get("email", "").strip()
         password = request.data.get("password")
 
         print("🔹 Login attempt for email:", email)
 
         try:
-            user = User.objects.get(email=email)
+            user = User.objects.get(email__iexact=email)
         except User.DoesNotExist:
             return Response({"error": "Неправильный E-mail или пароль."}, status=status.HTTP_401_UNAUTHORIZED)
 
@@ -199,10 +199,10 @@ class UserViewSet(ModelViewSet):
     )
     @action(detail=False, methods=["post"], url_path="forgot-password")
     def forgot_password(self, request):
-        email = request.data.get("email", "").strip().lower()
+        email = request.data.get("email", "").strip()
 
         try:
-            user = User.objects.get(email=email)
+            user = User.objects.get(email__iexact=email)
             print(f"Found user for password reset: {user}")
 
             # Generate a reset code and timestamp
@@ -241,14 +241,14 @@ class UserViewSet(ModelViewSet):
     )
     @action(detail=False, methods=["post"], url_path="verify-reset-code")
     def verify_reset_code(self, request):
-        email = request.data.get("email", "").strip().lower()
+        email = request.data.get("email", "").strip()
         reset_code = request.data.get("reset_code", "").strip().upper()
-    
+
         if not email or not reset_code:
             return Response({"error": "Email и код обязательны."}, status=status.HTTP_400_BAD_REQUEST)
-    
+
         try:
-            user = User.objects.get(email=email, reset_code__iexact=reset_code)
+            user = User.objects.get(email__iexact=email, reset_code__iexact=reset_code)
     
             if user.reset_code_created_at and user.reset_code_created_at < timezone.now() - timezone.timedelta(minutes=15):
                 return Response({"error": "Код сброса истёк. Запросите новый."}, status=status.HTTP_400_BAD_REQUEST)
@@ -274,7 +274,7 @@ class UserViewSet(ModelViewSet):
     )
     @action(detail=False, methods=["post"], url_path="reset-password")
     def reset_password(self, request):
-        email = request.data.get("email", "").strip().lower()
+        email = request.data.get("email", "").strip()
         reset_code = request.data.get("reset_code", "").strip()
         new_password = request.data.get("new_password", "").strip()
 
@@ -289,8 +289,8 @@ class UserViewSet(ModelViewSet):
             return Response({"error": "Все поля обязательны."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            # ✅ Use case-insensitive matching for reset_code
-            user = User.objects.get(email=email, reset_code__iexact=reset_code)
+            # ✅ Use case-insensitive matching for both email and reset_code
+            user = User.objects.get(email__iexact=email, reset_code__iexact=reset_code)
             print("✅ User found:", user.email)
 
             if user.reset_code_created_at:
