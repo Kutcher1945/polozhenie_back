@@ -4,6 +4,8 @@ from common.models import BaseModel
 class HomeAppointment(BaseModel):
     STATUS_CHOICES = [
         ('scheduled', 'Запланировано'),
+        ('assigned', 'Назначено медсестре'),
+        ('in_progress', 'В процессе'),
         ('completed', 'Завершено'),
         ('cancelled', 'Отменено'),
     ]
@@ -13,6 +15,10 @@ class HomeAppointment(BaseModel):
     )
     doctor = models.ForeignKey(
         'common.User', on_delete=models.CASCADE, related_name='home_doctor_appointments', verbose_name="Врач"
+    )
+    nurse = models.ForeignKey(
+        'common.User', on_delete=models.SET_NULL, related_name='home_nurse_appointments',
+        null=True, blank=True, verbose_name="Медсестра"
     )
     appointment_time = models.DateTimeField(verbose_name="Дата и время вызова")
     address = models.CharField(max_length=255, verbose_name="Адрес вызова")
