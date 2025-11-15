@@ -37,7 +37,10 @@ class HomeAppointmentViewSet(viewsets.ModelViewSet):
             elif user.role == 'doctor':
                 return HomeAppointment.objects.filter(doctor=user)
             elif user.role == 'nurse':
-                return HomeAppointment.objects.filter(nurse=user)
+                # Nurses can see their assigned appointments OR unassigned ones they can accept
+                return HomeAppointment.objects.filter(
+                    Q(nurse=user) | Q(nurse__isnull=True)
+                )
             else:
                 return HomeAppointment.objects.filter(patient=user)
         return HomeAppointment.objects.none()
