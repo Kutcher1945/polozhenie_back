@@ -125,7 +125,7 @@ CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "https://www.zhan.care",
-    "https://www.zhancare.app/",
+    "https://www.zhancare.app",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
