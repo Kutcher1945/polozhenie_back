@@ -40,6 +40,8 @@ INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
+    'leaflet',
+    'django.contrib.gis',
     "drf_yasg",  # Make sure drf-yasg is listed
     # Third-party apps
     "daphne",  # ✅ ASGI server for Django
@@ -55,9 +57,19 @@ INSTALLED_APPS = [
     "consultations",
     "ai_game",
     "telegram_bot",
+    "clinics",
 ]
 
 APPEND_SLASH = False  # Disable appending slashes to URLs
+
+LEAFLET_CONFIG = {
+    'DEFAULT_CENTER': (51.1282, 71.4304),   # center on Astana
+    'DEFAULT_ZOOM': 11,
+    'MIN_ZOOM': 3,
+    'MAX_ZOOM': 18,
+    'SCALE': 'metric',
+    'ATTRIBUTION_PREFIX': 'Clinics Map'
+}
 
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",  # Add this at the top
