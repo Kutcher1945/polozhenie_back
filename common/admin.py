@@ -1,5 +1,6 @@
 from django.contrib import admin
-from .models import User, CustomToken, DoctorSpecialization, DoctorProfile, NurseSpecialization, NurseProfile, Clinic
+from rest_framework.authtoken.models import Token
+from .models import User, DoctorSpecialization, DoctorProfile, NurseSpecialization, NurseProfile, Clinic
 
 @admin.register(User)
 class UserAdmin(admin.ModelAdmin):
@@ -9,12 +10,8 @@ class UserAdmin(admin.ModelAdmin):
     ordering = ("-created_at",)
     readonly_fields = ("created_at", "updated_at")
 
-@admin.register(CustomToken)
-class CustomTokenAdmin(admin.ModelAdmin):
-    list_display = ("key", "user", "created_at")
-    search_fields = ("user__email",)
-    ordering = ("-created_at",)
-    readonly_fields = ("key", "created_at")
+# Standard DRF Token is already registered by rest_framework.authtoken
+# No need to register it again
 
 @admin.register(DoctorSpecialization)
 class DoctorSpecializationAdmin(admin.ModelAdmin):

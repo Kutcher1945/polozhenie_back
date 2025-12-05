@@ -7,7 +7,7 @@ from channels.db import database_sync_to_async
 from django.contrib.auth.models import AnonymousUser
 from django.utils import timezone
 from rest_framework.authtoken.models import Token
-from .models import CustomToken, User
+from .models import User
 
 logger = logging.getLogger(__name__)
 
@@ -256,16 +256,16 @@ class SocketIOConsumer(AsyncWebsocketConsumer):
 
     @database_sync_to_async
     def authenticate_user(self, token):
-        """Authenticate user by token - prioritizes CustomToken over JWT"""
+        """Authenticate user by token - prioritizes Token over JWT"""
         try:
-            # First, always try CustomToken authentication (our primary method)
-            logger.info("Attempting CustomToken authentication")
-            token_obj = CustomToken.objects.get(key=token)
-            logger.info(f"CustomToken authentication successful for user: {token_obj.user.email}")
+            # First, always try Token authentication (our primary method)
+            logger.info("Attempting Token authentication")
+            token_obj = Token.objects.get(key=token)
+            logger.info(f"Token authentication successful for user: {token_obj.user.email}")
             return token_obj.user
-        except CustomToken.DoesNotExist:
-            logger.info("CustomToken not found, trying JWT authentication")
-            # Only try JWT if CustomToken fails and token looks like JWT
+        except Token.DoesNotExist:
+            logger.info("Token not found, trying JWT authentication")
+            # Only try JWT if Token fails and token looks like JWT
             if '.' in token and len(token.split('.')) == 3:
                 logger.info("Attempting JWT authentication as fallback")
                 return self.authenticate_jwt(token)

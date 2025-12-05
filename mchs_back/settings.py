@@ -111,7 +111,7 @@ SPECTACULAR_SETTINGS = {
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'common.authentication.CustomTokenAuthentication',  # ✅ Use your CustomToken
+        'rest_framework.authentication.TokenAuthentication',  # ✅ Use standard DRF Token
     ),
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     # 'DEFAULT_PERMISSION_CLASSES': (

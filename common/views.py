@@ -12,7 +12,8 @@ from rest_framework import status
 from drf_yasg.utils import swagger_auto_schema
 from django.db.models import Q
 from django.contrib.auth.hashers import make_password
-from .models import User, CustomToken
+from .models import User
+from rest_framework.authtoken.models import Token
 from .serializers import UserSerializer, UserProfileSerializer
 from .permissions import IsDoctor, IsAdmin, IsNurse
 from .utils.email_utils import send_password_reset_email
@@ -167,8 +168,8 @@ class UserViewSet(ModelViewSet):
             return Response({"error": "Account is inactive. Please contact support."}, status=status.HTTP_403_FORBIDDEN)
 
         # ✅ Remove existing tokens and generate a new one
-        CustomToken.objects.filter(user=user).delete()
-        token = CustomToken.objects.create(user=user)
+        Token.objects.filter(user=user).delete()
+        token = Token.objects.create(user=user)
 
         # Use UserProfileSerializer to include all profile fields
         user_serializer = UserProfileSerializer(user)
@@ -485,7 +486,7 @@ class UserViewSet(ModelViewSet):
                 print("[DEBUG] Using request.user directly:", user)
                 print("[DEBUG] request.user.role:", getattr(user, "role", None))
             else:
-                from common.models import CustomToken
+                from rest_framework.authtoken.models import Token
                 auth_header = request.META.get('HTTP_AUTHORIZATION', '')
                 print("[DEBUG] Auth header:", auth_header)
 
@@ -493,7 +494,7 @@ class UserViewSet(ModelViewSet):
                     token_key = auth_header.split(' ')[1]
                     print("[DEBUG] Token key:", token_key)
 
-                    token = CustomToken.objects.select_related('user').get(key=token_key)
+                    token = Token.objects.select_related('user').get(key=token_key)
                     user = token.user
                     print("[DEBUG] User from token:", user)
                     print("[DEBUG] user.role:", getattr(user, "role", None))
@@ -616,15 +617,15 @@ class UserProfileViewSet(ViewSet):
                 user = request.user
             else:
                 # Get custom User from token
-                from common.models import CustomToken
+                from rest_framework.authtoken.models import Token
                 auth_header = request.META.get('HTTP_AUTHORIZATION', '')
                 if auth_header.startswith('Token '):
                     token_key = auth_header.split(' ')[1]
-                    token = CustomToken.objects.select_related('user').get(key=token_key)
+                    token = Token.objects.select_related('user').get(key=token_key)
                     user = token.user
                 else:
                     return Response({'error': 'Authentication token required'}, status=status.HTTP_401_UNAUTHORIZED)
-        except CustomToken.DoesNotExist:
+        except Token.DoesNotExist:
             return Response({'error': 'Invalid token'}, status=status.HTTP_401_UNAUTHORIZED)
         except Exception as e:
             return Response({'error': f'Authentication error: {str(e)}'}, status=status.HTTP_401_UNAUTHORIZED)
@@ -741,13 +742,13 @@ class UserProfileViewSet(ViewSet):
             return Response({"error": "Refresh token is required"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            token_obj = CustomToken.objects.get(key=refresh_token)
-        except CustomToken.DoesNotExist:
+            token_obj = Token.objects.get(key=refresh_token)
+        except Token.DoesNotExist:
             return Response({"error": "Invalid or expired refresh token"}, status=status.HTTP_401_UNAUTHORIZED)
 
         # Удаляем старый токен и создаем новый
         token_obj.delete()
-        new_token = CustomToken.objects.create(user=token_obj.user)
+        new_token = Token.objects.create(user=token_obj.user)
 
         return Response({
             "access_token": new_token.key,
@@ -833,7 +834,7 @@ class UserProfileViewSet(ViewSet):
                 print("[DEBUG] Using request.user directly:", user)
                 print("[DEBUG] request.user.role:", getattr(user, "role", None))
             else:
-                from common.models import CustomToken
+                from rest_framework.authtoken.models import Token
                 auth_header = request.META.get('HTTP_AUTHORIZATION', '')
                 print("[DEBUG] Auth header:", auth_header)
 
@@ -841,7 +842,7 @@ class UserProfileViewSet(ViewSet):
                     token_key = auth_header.split(' ')[1]
                     print("[DEBUG] Token key:", token_key)
 
-                    token = CustomToken.objects.select_related('user').get(key=token_key)
+                    token = Token.objects.select_related('user').get(key=token_key)
                     user = token.user
                     print("[DEBUG] User from token:", user)
                     print("[DEBUG] user.role:", getattr(user, "role", None))

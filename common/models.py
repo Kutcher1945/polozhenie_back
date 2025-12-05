@@ -1,5 +1,4 @@
 from django.db import models
-from rest_framework.authtoken.models import Token
 from django.contrib.auth.hashers import check_password, make_password
 from django.contrib.auth.base_user import BaseUserManager
 
@@ -304,19 +303,22 @@ class NurseProfile(BaseModel):
         verbose_name_plural = "Профили медсестёр"
 
 
-class CustomToken(BaseModel):
-    key = models.CharField(max_length=40, primary_key=True, default=Token.generate_key, editable=False)
-    user = models.OneToOneField(
-        User,
-        related_name='custom_auth_token',
-        on_delete=models.CASCADE,
-        verbose_name="User"
-    )
-
-    class Meta:
-        db_table = "common_authtoken"
-        verbose_name = "Токен"
-        verbose_name_plural = "Токены"
-
-    def __str__(self):
-        return self.key
+# DEPRECATED: CustomToken has been replaced with standard DRF Token
+# Keeping this commented for migration purposes - can be removed after migration
+#
+# class CustomToken(BaseModel):
+#     key = models.CharField(max_length=40, primary_key=True, default=Token.generate_key, editable=False)
+#     user = models.OneToOneField(
+#         User,
+#         related_name='custom_auth_token',
+#         on_delete=models.CASCADE,
+#         verbose_name="User"
+#     )
+#
+#     class Meta:
+#         db_table = "common_authtoken"
+#         verbose_name = "Токен"
+#         verbose_name_plural = "Токены"
+#
+#     def __str__(self):
+#         return self.key
