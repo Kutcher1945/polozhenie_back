@@ -418,6 +418,9 @@ class Clinics(models.Model):
         null=True, blank=True,
         verbose_name="WhatsApp"
     )
+    created_at = models.DateTimeField(null=True,blank=True, verbose_name="Created At", auto_now_add=True, editable=False)
+    updated_at = models.DateTimeField(null=True,blank=True, verbose_name="Updated At", auto_now=True, editable=False)
+    is_deleted = models.BooleanField(null=True,blank=True, verbose_name='Удалено')
 
     class Meta:
         db_table = "clinics"
