@@ -303,22 +303,7 @@ class NurseProfile(BaseModel):
         verbose_name_plural = "Профили медсестёр"
 
 
-# DEPRECATED: CustomToken has been replaced with standard DRF Token
-# Keeping this commented for migration purposes - can be removed after migration
-#
-# class CustomToken(BaseModel):
-#     key = models.CharField(max_length=40, primary_key=True, default=Token.generate_key, editable=False)
-#     user = models.OneToOneField(
-#         User,
-#         related_name='custom_auth_token',
-#         on_delete=models.CASCADE,
-#         verbose_name="User"
-#     )
-#
-#     class Meta:
-#         db_table = "common_authtoken"
-#         verbose_name = "Токен"
-#         verbose_name_plural = "Токены"
-#
-#     def __str__(self):
-#         return self.key
+# CustomToken has been migrated to standard DRF Token (authtoken_token table)
+# Migration completed: 2025-12-05
+# - 52 tokens successfully migrated
+# - Old table 'common_authtoken' can be dropped manually if needed
