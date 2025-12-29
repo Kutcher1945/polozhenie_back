@@ -26,7 +26,7 @@ SECRET_KEY = "django-insecure-emst*q@f==ek=8-o)me!_l1ek2vi*#_s9g46d6+86*nlbvstms
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['127.0.0.1', 'localhost', '.vercel.app', 'exp-admin.smartalmaty.kz']
+ALLOWED_HOSTS = ['127.0.0.1', 'localhost', '.vercel.app', 'exp-admin.smartalmaty.kz', 'zhancare.app', 'www.zhancare.app', 'zhan.care', 'www.zhan.care']
 
 # Custom User Model
 AUTH_USER_MODEL = 'common.User'
@@ -145,6 +145,16 @@ CORS_ALLOWED_ORIGINS = [
 
 CORS_ALLOW_CREDENTIALS = True
 
+# Allow all HTTP methods
+CORS_ALLOW_METHODS = [
+    'DELETE',
+    'GET',
+    'OPTIONS',
+    'PATCH',
+    'POST',
+    'PUT',
+]
+
 # Additional CORS headers for Private Network Access (Chrome's CORS-RFC1918)
 CORS_ALLOW_HEADERS = [
     'accept',
@@ -162,6 +172,9 @@ CORS_EXPOSE_HEADERS = [
     'content-type',
     'x-csrftoken',
 ]
+
+# Preflight cache duration (24 hours)
+CORS_PREFLIGHT_MAX_AGE = 86400
 
 CSRF_COOKIE_HTTPONLY = False
 CSRF_COOKIE_SAMESITE = None
