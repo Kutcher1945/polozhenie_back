@@ -41,7 +41,7 @@ class ClinicsViewSet(viewsets.ReadOnlyModelViewSet):
     GET /api/v1/clinics/cities/ - список городов с клиниками
     GET /api/v1/clinics/categories/ - список категорий клиник
     """
-    queryset = Clinics.objects.all()
+    queryset = Clinics.objects.filter(is_deleted=False)
     permission_classes = [AllowAny]
     pagination_class = ClinicsPagination
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
@@ -56,7 +56,7 @@ class ClinicsViewSet(viewsets.ReadOnlyModelViewSet):
         return ClinicsListSerializer
 
     def get_queryset(self):
-        queryset = Clinics.objects.select_related(
+        queryset = Clinics.objects.filter(is_deleted=False).select_related(
             'city', 'district', 'region', 'country', 'microdistrict'
         )
 
@@ -109,7 +109,7 @@ class ClinicsViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=False, methods=['get'], url_path='categories')
     def categories(self, request):
         """Получить все уникальные категории клиник"""
-        clinics = Clinics.objects.exclude(categories__isnull=True)
+        clinics = Clinics.objects.filter(is_deleted=False).exclude(categories__isnull=True)
 
         all_categories = set()
         for clinic in clinics:
@@ -130,6 +130,8 @@ class ClinicsViewSet(viewsets.ReadOnlyModelViewSet):
             return Response([])
 
         clinics = Clinics.objects.filter(
+            is_deleted=False
+        ).filter(
             Q(name__icontains=query) |
             Q(address__icontains=query) |
             Q(description__icontains=query)
@@ -157,7 +159,7 @@ class ClinicsViewSet(viewsets.ReadOnlyModelViewSet):
 
         # Получаем все уникальные категории клиник
         all_categories = set()
-        for clinic in Clinics.objects.exclude(categories__isnull=True):
+        for clinic in Clinics.objects.filter(is_deleted=False).exclude(categories__isnull=True):
             if clinic.categories and isinstance(clinic.categories, list):
                 all_categories.update(clinic.categories)
 
@@ -242,7 +244,7 @@ class ClinicsViewSet(viewsets.ReadOnlyModelViewSet):
                 }
 
             # Строим запрос к БД
-            queryset = Clinics.objects.select_related(
+            queryset = Clinics.objects.filter(is_deleted=False).select_related(
                 'city', 'district', 'region', 'country'
             )
 
