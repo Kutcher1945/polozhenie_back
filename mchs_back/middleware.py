@@ -12,25 +12,50 @@ class PrivateNetworkAccessMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
-        # Handle preflight requests with Access-Control-Request-Private-Network
-        if request.method == 'OPTIONS' and 'HTTP_ACCESS_CONTROL_REQUEST_PRIVATE_NETWORK' in request.META:
+        origin = request.META.get('HTTP_ORIGIN', '')
+
+        # List of allowed origins
+        allowed_origins = [
+            'http://localhost:3000',
+            'https://www.zhan.care',
+            'https://www.zhancare.app',
+            'https://zhan.care',
+            'https://zhancare.app',
+        ]
+
+        # Check if origin is allowed
+        origin_allowed = origin in allowed_origins
+
+        # Handle preflight requests (OPTIONS)
+        if request.method == 'OPTIONS':
             from django.http import HttpResponse
             response = HttpResponse()
-            response['Access-Control-Allow-Private-Network'] = 'true'
-            response['Access-Control-Allow-Origin'] = request.META.get('HTTP_ORIGIN', '*')
+
+            # Set CORS headers
+            if origin_allowed:
+                response['Access-Control-Allow-Origin'] = origin
             response['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
             response['Access-Control-Allow-Headers'] = request.META.get(
                 'HTTP_ACCESS_CONTROL_REQUEST_HEADERS',
                 'accept, accept-encoding, authorization, content-type, dnt, origin, user-agent, x-csrftoken, x-requested-with'
             )
             response['Access-Control-Allow-Credentials'] = 'true'
+
+            # Handle Private Network Access
+            if 'HTTP_ACCESS_CONTROL_REQUEST_PRIVATE_NETWORK' in request.META:
+                response['Access-Control-Allow-Private-Network'] = 'true'
+
+            response['Access-Control-Max-Age'] = '86400'  # Cache preflight for 24 hours
             return response
 
         # Process the request normally
         response = self.get_response(request)
 
-        # Add Private Network Access header to all responses
-        if 'HTTP_ORIGIN' in request.META:
+        # Add CORS headers to all responses
+        if origin_allowed:
+            response['Access-Control-Allow-Origin'] = origin
+            response['Access-Control-Allow-Credentials'] = 'true'
             response['Access-Control-Allow-Private-Network'] = 'true'
+            response['Access-Control-Expose-Headers'] = 'content-type, x-csrftoken'
 
         return response
