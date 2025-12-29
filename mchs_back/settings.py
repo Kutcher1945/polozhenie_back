@@ -73,6 +73,7 @@ LEAFLET_CONFIG = {
 
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",  # Add this at the top
+    "mchs_back.middleware.PrivateNetworkAccessMiddleware",  # Handle Private Network Access
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -138,9 +139,29 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "https://www.zhan.care",
     "https://www.zhancare.app",
+    "https://zhan.care",
+    "https://zhancare.app",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
+
+# Additional CORS headers for Private Network Access (Chrome's CORS-RFC1918)
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]
+
+CORS_EXPOSE_HEADERS = [
+    'content-type',
+    'x-csrftoken',
+]
 
 CSRF_COOKIE_HTTPONLY = False
 CSRF_COOKIE_SAMESITE = None
@@ -152,6 +173,10 @@ CSRF_TRUSTED_ORIGINS = [
     'https://exp-admin.smartalmaty.kz',
     'http://localhost:3000',
     'http://localhost:8000',
+    'https://www.zhan.care',
+    'https://www.zhancare.app',
+    'https://zhan.care',
+    'https://zhancare.app',
 ]
 
 TEMPLATES = [
