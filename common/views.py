@@ -338,12 +338,12 @@ class UserViewSet(ModelViewSet):
     @action(detail=False, methods=["get"], url_path="doctor/available")
     def get_available_doctors(self, request):
         """Fetch a list of available doctors."""
-        # Optimize query to avoid N+1 problem by prefetching specializations
+        # Optimize query to avoid N+1 problem by prefetching specializations and clinic
         # Show all active doctors (regardless of availability status for real-time updates)
         doctors = User.objects.filter(
             role="doctor",
             is_active=True
-        ).select_related('doctor_specialization')
+        ).select_related('doctor_specialization', 'clinic', 'clinic__city')
 
         if not doctors.exists():
             return Response({"error": "No available doctors found."}, status=status.HTTP_404_NOT_FOUND)
@@ -364,6 +364,18 @@ class UserViewSet(ModelViewSet):
             else:
                 specialization = doctor.doctor_type or "Специальность не указана"
 
+            # Get clinic information if doctor has clinic
+            clinic_data = None
+            if doctor.clinic:
+                clinic = doctor.clinic
+                clinic_data = {
+                    "id": clinic.id,
+                    "name": clinic.name,
+                    "address": clinic.address or None,
+                    "phone": clinic.phones if hasattr(clinic, 'phones') else None,
+                    "city": clinic.city.name_ru if clinic.city else None,
+                }
+
             doctor_list.append({
                 "id": doctor.id,
                 "name": f"{doctor.first_name} {doctor.last_name}",
@@ -371,6 +383,8 @@ class UserViewSet(ModelViewSet):
                 "doctor_type": specialization,
                 "availability_status": doctor.availability_status or 'offline',
                 "availability_note": doctor.availability_note or '',
+                # Include clinic information
+                "clinic": clinic_data,
                 # Include additional specialization details
                 "specialization": {
                     "id": doctor.doctor_specialization.id if doctor.doctor_specialization else None,
@@ -390,12 +404,12 @@ class UserViewSet(ModelViewSet):
     @action(detail=False, methods=["get"], url_path="nurse/available")
     def get_available_nurses(self, request):
         """Fetch a list of available nurses."""
-        # Optimize query to avoid N+1 problem by prefetching specializations
+        # Optimize query to avoid N+1 problem by prefetching specializations and clinic
         # Show all active nurses (regardless of availability status for real-time updates)
         nurses = User.objects.filter(
             role="nurse",
             is_active=True
-        ).select_related('nurse_specialization')
+        ).select_related('nurse_specialization', 'clinic', 'clinic__city')
 
         if not nurses.exists():
             return Response({"error": "No available nurses found."}, status=status.HTTP_404_NOT_FOUND)
@@ -416,6 +430,18 @@ class UserViewSet(ModelViewSet):
             else:
                 specialization = nurse.nurse_type or "Специальность не указана"
 
+            # Get clinic information if nurse has clinic
+            clinic_data = None
+            if nurse.clinic:
+                clinic = nurse.clinic
+                clinic_data = {
+                    "id": clinic.id,
+                    "name": clinic.name,
+                    "address": clinic.address or None,
+                    "phone": clinic.phones if hasattr(clinic, 'phones') else None,
+                    "city": clinic.city.name_ru if clinic.city else None,
+                }
+
             nurse_list.append({
                 "id": nurse.id,
                 "name": f"{nurse.first_name} {nurse.last_name}",
@@ -423,6 +449,8 @@ class UserViewSet(ModelViewSet):
                 "nurse_type": specialization,
                 "availability_status": nurse.availability_status or 'offline',
                 "availability_note": nurse.availability_note or '',
+                # Include clinic information
+                "clinic": clinic_data,
                 # Include additional specialization details
                 "specialization": {
                     "id": nurse.nurse_specialization.id if nurse.nurse_specialization else None,

@@ -168,6 +168,16 @@ class User(BaseModel):
     nurse_type = models.CharField(max_length=150, null=True, blank=True, verbose_name="Тип медсестры")
     nurse_specialization = models.ForeignKey('NurseSpecialization', on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Специализация медсестры")
 
+    # Клиника (для докторов и медсестер)
+    clinic = models.ForeignKey(
+        'clinics.Clinics',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='staff_members',
+        verbose_name="Клиника"
+    )
+
     # Статус доступности для докторов и медсестёр
     AVAILABILITY_CHOICES = [
         ('available', 'Доступен'),
@@ -239,25 +249,23 @@ class User(BaseModel):
 
 
 
-class Clinic(BaseModel):
-    name = models.CharField(max_length=255, unique=True, verbose_name="Название клиники")
-    address = models.TextField(null=True, blank=True, verbose_name="Адрес")
-    phone = models.CharField(max_length=20, null=True, blank=True, verbose_name="Телефон")
-    website = models.URLField(null=True, blank=True, verbose_name="Вебсайт")
-
-    def __str__(self):
-        return self.name
-
-    class Meta:
-        verbose_name = "Клиника"
-        verbose_name_plural = "Клиники"
-
-
 class DoctorProfile(BaseModel):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='doctor_profile')
     specialization = models.ForeignKey(DoctorSpecialization, on_delete=models.SET_NULL, null=True, blank=True)
     years_of_experience = models.PositiveIntegerField(null=True, blank=True, verbose_name="Опыт работы (лет)")
-    clinics = models.ManyToManyField(Clinic, blank=True, related_name='doctors', verbose_name="Клиники")
+
+    # Primary clinic - main workplace (optional, can work independently)
+    clinic = models.ForeignKey(
+        'clinics.Clinics',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='primary_doctors',
+        verbose_name="Основная клиника"
+    )
+
+    # Additional clinics - can work in multiple locations
+    additional_clinics = models.ManyToManyField('clinics.Clinics', blank=True, related_name='doctors', verbose_name="Дополнительные клиники")
 
     @property
     def is_available_for_consultation(self):
@@ -271,7 +279,8 @@ class DoctorProfile(BaseModel):
         return choices.get(self.user.availability_status, 'Неизвестно') if self.user.availability_status else 'Неизвестно'
 
     def __str__(self):
-        return f"{self.user.first_name} {self.user.last_name} - {self.specialization.name if self.specialization else 'Без специализации'}"
+        clinic_info = f" ({self.clinic.name})" if self.clinic else " (Независимый)"
+        return f"{self.user.first_name} {self.user.last_name} - {self.specialization.name_ru if self.specialization else 'Без специализации'}{clinic_info}"
 
     class Meta:
         verbose_name = "Профиль доктора"
@@ -282,7 +291,19 @@ class NurseProfile(BaseModel):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='nurse_profile')
     specialization = models.ForeignKey(NurseSpecialization, on_delete=models.SET_NULL, null=True, blank=True)
     years_of_experience = models.PositiveIntegerField(null=True, blank=True, verbose_name="Опыт работы (лет)")
-    clinics = models.ManyToManyField(Clinic, blank=True, related_name='nurses', verbose_name="Клиники")
+
+    # Primary clinic - main workplace (optional, can work independently)
+    clinic = models.ForeignKey(
+        'clinics.Clinics',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='primary_nurses',
+        verbose_name="Основная клиника"
+    )
+
+    # Additional clinics - can work in multiple locations
+    additional_clinics = models.ManyToManyField('clinics.Clinics', blank=True, related_name='nurses', verbose_name="Дополнительные клиники")
 
     @property
     def is_available_for_consultation(self):
@@ -296,7 +317,8 @@ class NurseProfile(BaseModel):
         return choices.get(self.user.availability_status, 'Неизвестно') if self.user.availability_status else 'Неизвестно'
 
     def __str__(self):
-        return f"{self.user.first_name} {self.user.last_name} - {self.specialization.name_ru if self.specialization else 'Без специализации'}"
+        clinic_info = f" ({self.clinic.name})" if self.clinic else " (Независимая)"
+        return f"{self.user.first_name} {self.user.last_name} - {self.specialization.name_ru if self.specialization else 'Без специализации'}{clinic_info}"
 
     class Meta:
         verbose_name = "Профиль медсестры"
