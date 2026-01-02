@@ -1,14 +1,15 @@
 from django.contrib import admin
 from rest_framework.authtoken.models import Token
-from .models import User, DoctorSpecialization, DoctorProfile, NurseSpecialization, NurseProfile, Clinic
+from .models import User, DoctorSpecialization, DoctorProfile, NurseSpecialization, NurseProfile
 
 @admin.register(User)
 class UserAdmin(admin.ModelAdmin):
-    list_display = ("email", "phone", "first_name", "last_name", "is_active", "created_at", "role")
-    search_fields = ("email", "phone", "first_name", "last_name")
-    list_filter = ("is_active", "created_at", "role")
+    list_display = ("email", "phone", "first_name", "last_name", "is_active", "created_at", "role", "clinic")
+    search_fields = ("email", "phone", "first_name", "last_name", "clinic__name")
+    list_filter = ("is_active", "created_at", "role", "clinic")
     ordering = ("-created_at",)
     readonly_fields = ("created_at", "updated_at")
+    autocomplete_fields = ("clinic",)
 
 # Standard DRF Token is already registered by rest_framework.authtoken
 # No need to register it again
@@ -27,29 +28,24 @@ class NurseSpecializationAdmin(admin.ModelAdmin):
     ordering = ("name_ru",)
     readonly_fields = ("created_at", "updated_at")
 
-@admin.register(Clinic)
-class ClinicAdmin(admin.ModelAdmin):
-    list_display = ("name", "phone", "address", "created_at")
-    search_fields = ("name", "phone", "address")
-    ordering = ("name",)
-    readonly_fields = ("created_at", "updated_at")
-
 @admin.register(DoctorProfile)
 class DoctorProfileAdmin(admin.ModelAdmin):
-    list_display = ("user", "specialization", "years_of_experience", "created_at")
-    search_fields = ("user__email", "user__first_name", "user__last_name")
-    list_filter = ("specialization", "years_of_experience")
+    list_display = ("user", "specialization", "clinic", "years_of_experience", "created_at")
+    search_fields = ("user__email", "user__first_name", "user__last_name", "clinic__name")
+    list_filter = ("specialization", "clinic", "years_of_experience")
     ordering = ("-created_at",)
     readonly_fields = ("created_at", "updated_at")
-    filter_horizontal = ("clinics",)
+    filter_horizontal = ("additional_clinics",)
+    autocomplete_fields = ("clinic",)
 
 @admin.register(NurseProfile)
 class NurseProfileAdmin(admin.ModelAdmin):
-    list_display = ("user", "specialization", "years_of_experience", "created_at")
-    search_fields = ("user__email", "user__first_name", "user__last_name")
-    list_filter = ("specialization", "years_of_experience")
+    list_display = ("user", "specialization", "clinic", "years_of_experience", "created_at")
+    search_fields = ("user__email", "user__first_name", "user__last_name", "clinic__name")
+    list_filter = ("specialization", "clinic", "years_of_experience")
     ordering = ("-created_at",)
     readonly_fields = ("created_at", "updated_at")
-    filter_horizontal = ("clinics",)
+    filter_horizontal = ("additional_clinics",)
+    autocomplete_fields = ("clinic",)
 
 
