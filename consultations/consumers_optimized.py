@@ -122,6 +122,10 @@ class OptimizedConsultationConsumer(AsyncWebsocketConsumer):
         personal_group = f"user_{self.user_id}"
         await self.join_group(personal_group)
 
+        # ALL users join socketio_clients to receive real-time updates
+        await self.join_group("socketio_clients")
+        await self.join_group("consultations")
+
         # Role-based groups
         if self.user_role == 'doctor':
             await self.join_group("doctors")
