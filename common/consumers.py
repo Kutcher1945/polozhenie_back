@@ -344,7 +344,8 @@ class SocketIOConsumer(AsyncWebsocketConsumer):
                 'availability_status': event['availability_status'],
                 'availability_note': event.get('availability_note', ''),
                 'old_status': event.get('old_status'),
-                'doctor_info': event.get('doctor_info', {}),
+                'data': event.get('data', {}),  # Full doctor data from backend
+                'doctor_info': event.get('doctor_info', {}),  # Legacy support
                 'timestamp': timezone.now().isoformat()
             }
         }))

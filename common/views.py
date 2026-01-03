@@ -568,21 +568,86 @@ class UserViewSet(ModelViewSet):
         user.save()
         print(f"[DEBUG] Updated {user.email} availability from {old_status} -> {availability_status}")
 
-        # Broadcast availability change via WebSocket
+        # Broadcast availability change via WebSocket with FULL doctor data
         channel_layer = get_channel_layer()
         if channel_layer:
             try:
-                # Determine specialization based on role
+                # Prepare full data based on role
                 if user_role == 'doctor':
-                    specialization = user.doctor_specialization.name_ru if user.doctor_specialization else user.doctor_type
                     event_type = 'doctor_availability_changed'
                     user_id_key = 'doctor_id'
-                    user_info_key = 'doctor_info'
+
+                    # Get clinic information
+                    clinic_data = None
+                    if user.clinic:
+                        clinic = user.clinic
+                        clinic_data = {
+                            "id": clinic.id,
+                            "name": clinic.name,
+                            "address": clinic.address or None,
+                            "phone": clinic.phones if hasattr(clinic, 'phones') else None,
+                            "city": clinic.city.name_ru if clinic.city else None,
+                        }
+
+                    # Get specialization
+                    if user.doctor_specialization:
+                        specialization = user.doctor_specialization.name_ru
+                    else:
+                        specialization = user.doctor_type or "Специальность не указана"
+
+                    # Full doctor data
+                    full_data = {
+                        "id": user.id,
+                        "name": f"{user.first_name} {user.last_name}",
+                        "email": user.email,
+                        "doctor_type": specialization,
+                        "availability_status": availability_status,
+                        "availability_note": availability_note,
+                        "clinic": clinic_data,
+                        "specialization": {
+                            "id": user.doctor_specialization.id if user.doctor_specialization else None,
+                            "name_ru": user.doctor_specialization.name_ru if user.doctor_specialization else None,
+                            "name_kz": user.doctor_specialization.name_kz if user.doctor_specialization else None,
+                            "name_en": user.doctor_specialization.name_en if user.doctor_specialization else None,
+                        } if user.doctor_specialization else None
+                    }
                 else:  # nurse
-                    specialization = user.nurse_specialization.name_ru if user.nurse_specialization else user.nurse_type
                     event_type = 'nurse_availability_changed'
                     user_id_key = 'nurse_id'
-                    user_info_key = 'nurse_info'
+
+                    # Get clinic information
+                    clinic_data = None
+                    if user.clinic:
+                        clinic = user.clinic
+                        clinic_data = {
+                            "id": clinic.id,
+                            "name": clinic.name,
+                            "address": clinic.address or None,
+                            "phone": clinic.phones if hasattr(clinic, 'phones') else None,
+                            "city": clinic.city.name_ru if clinic.city else None,
+                        }
+
+                    # Get specialization
+                    if user.nurse_specialization:
+                        specialization = user.nurse_specialization.name_ru
+                    else:
+                        specialization = user.nurse_type or "Специальность не указана"
+
+                    full_data = {
+                        "id": user.id,
+                        "name": f"{user.first_name} {user.last_name}",
+                        "email": user.email,
+                        "nurse_type": specialization,
+                        "availability_status": availability_status,
+                        "availability_note": availability_note,
+                        "clinic": clinic_data,
+                        "specialization": {
+                            "id": user.nurse_specialization.id if user.nurse_specialization else None,
+                            "name_ru": user.nurse_specialization.name_ru if user.nurse_specialization else None,
+                            "name_kz": user.nurse_specialization.name_kz if user.nurse_specialization else None,
+                            "name_en": user.nurse_specialization.name_en if user.nurse_specialization else None,
+                        } if user.nurse_specialization else None
+                    }
 
                 payload = {
                     'type': event_type,
@@ -590,19 +655,11 @@ class UserViewSet(ModelViewSet):
                     'availability_status': availability_status,
                     'availability_note': availability_note,
                     'old_status': old_status,
-                    user_info_key: {
-                        'id': user.id,
-                        'name': f"{user.first_name} {user.last_name}",
-                        'email': user.email,
-                        'specialization': specialization
-                    }
+                    'data': full_data  # Full doctor/nurse data
                 }
 
-                # Send to all Socket.IO clients
+                # Send to all Socket.IO clients (no need to send to both groups to avoid duplicates)
                 async_to_sync(channel_layer.group_send)("socketio_clients", payload)
-
-                # Also send to consultation clients
-                async_to_sync(channel_layer.group_send)("consultations", payload)
 
                 logger.info(f"{user_role.capitalize()} {user.email} availability changed from {old_status} to {availability_status}")
             except Exception as e:
@@ -916,21 +973,86 @@ class UserProfileViewSet(ViewSet):
         user.save()
         print(f"[DEBUG] Updated {user.email} availability from {old_status} -> {availability_status}")
     
-        # Broadcast availability change via WebSocket
+        # Broadcast availability change via WebSocket with FULL doctor/nurse data
         channel_layer = get_channel_layer()
         if channel_layer:
             try:
-                # Determine specialization based on role
+                # Prepare full data based on role
                 if user_role == 'doctor':
-                    specialization = user.doctor_specialization.name_ru if user.doctor_specialization else user.doctor_type
                     event_type = 'doctor_availability_changed'
                     user_id_key = 'doctor_id'
-                    user_info_key = 'doctor_info'
+
+                    # Get clinic information
+                    clinic_data = None
+                    if user.clinic:
+                        clinic = user.clinic
+                        clinic_data = {
+                            "id": clinic.id,
+                            "name": clinic.name,
+                            "address": clinic.address or None,
+                            "phone": clinic.phones if hasattr(clinic, 'phones') else None,
+                            "city": clinic.city.name_ru if clinic.city else None,
+                        }
+
+                    # Get specialization
+                    if user.doctor_specialization:
+                        specialization = user.doctor_specialization.name_ru
+                    else:
+                        specialization = user.doctor_type or "Специальность не указана"
+
+                    # Full doctor data
+                    full_data = {
+                        "id": user.id,
+                        "name": f"{user.first_name} {user.last_name}",
+                        "email": user.email,
+                        "doctor_type": specialization,
+                        "availability_status": availability_status,
+                        "availability_note": availability_note,
+                        "clinic": clinic_data,
+                        "specialization": {
+                            "id": user.doctor_specialization.id if user.doctor_specialization else None,
+                            "name_ru": user.doctor_specialization.name_ru if user.doctor_specialization else None,
+                            "name_kz": user.doctor_specialization.name_kz if user.doctor_specialization else None,
+                            "name_en": user.doctor_specialization.name_en if user.doctor_specialization else None,
+                        } if user.doctor_specialization else None
+                    }
                 else:  # nurse
-                    specialization = user.nurse_specialization.name_ru if user.nurse_specialization else user.nurse_type
                     event_type = 'nurse_availability_changed'
                     user_id_key = 'nurse_id'
-                    user_info_key = 'nurse_info'
+
+                    # Get clinic information
+                    clinic_data = None
+                    if user.clinic:
+                        clinic = user.clinic
+                        clinic_data = {
+                            "id": clinic.id,
+                            "name": clinic.name,
+                            "address": clinic.address or None,
+                            "phone": clinic.phones if hasattr(clinic, 'phones') else None,
+                            "city": clinic.city.name_ru if clinic.city else None,
+                        }
+
+                    # Get specialization
+                    if user.nurse_specialization:
+                        specialization = user.nurse_specialization.name_ru
+                    else:
+                        specialization = user.nurse_type or "Специальность не указана"
+
+                    full_data = {
+                        "id": user.id,
+                        "name": f"{user.first_name} {user.last_name}",
+                        "email": user.email,
+                        "nurse_type": specialization,
+                        "availability_status": availability_status,
+                        "availability_note": availability_note,
+                        "clinic": clinic_data,
+                        "specialization": {
+                            "id": user.nurse_specialization.id if user.nurse_specialization else None,
+                            "name_ru": user.nurse_specialization.name_ru if user.nurse_specialization else None,
+                            "name_kz": user.nurse_specialization.name_kz if user.nurse_specialization else None,
+                            "name_en": user.nurse_specialization.name_en if user.nurse_specialization else None,
+                        } if user.nurse_specialization else None
+                    }
 
                 payload = {
                     'type': event_type,
@@ -938,19 +1060,11 @@ class UserProfileViewSet(ViewSet):
                     'availability_status': availability_status,
                     'availability_note': availability_note,
                     'old_status': old_status,
-                    user_info_key: {
-                        'id': user.id,
-                        'name': f"{user.first_name} {user.last_name}",
-                        'email': user.email,
-                        'specialization': specialization
-                    }
+                    'data': full_data  # Full doctor/nurse data
                 }
 
-                # Send to all Socket.IO clients
+                # Send to all Socket.IO clients (no need to send to both groups to avoid duplicates)
                 async_to_sync(channel_layer.group_send)("socketio_clients", payload)
-
-                # Also send to consultation clients
-                async_to_sync(channel_layer.group_send)("consultations", payload)
 
                 logger.info(f"{user_role.capitalize()} {user.email} availability changed from {old_status} to {availability_status}")
             except Exception as e:
