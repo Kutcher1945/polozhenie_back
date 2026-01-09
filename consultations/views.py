@@ -9,6 +9,8 @@ from rest_framework import status
 from common.models import User
 from .models import Consultation, AIRecommendationLog
 from .serializers import ConsultationSerializer
+from .permissions import IsAuthenticatedOrAIRecommendation
+from .throttles import AIRecommendationAnonThrottle, AIRecommendationUserThrottle
 import uuid
 from django.utils import timezone
 import jwt
@@ -33,7 +35,7 @@ def csrf_token_view(request):
 class ConsultationViewSet(ModelViewSet):
     queryset = Consultation.objects.all()
     serializer_class = ConsultationSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticatedOrAIRecommendation]
     lookup_field = "meeting_id"  # ✅ Tell DRF to use meeting_id in URLs
 
     def get_queryset(self):
@@ -353,14 +355,36 @@ class ConsultationViewSet(ModelViewSet):
         return Response({"token": token, "url": settings.LIVEKIT_URL, "identity": identity})
 
 
-    @action(detail=False, methods=["post"], url_path="ai-recommend")
+    @action(
+        detail=False,
+        methods=["post"],
+        url_path="ai-recommend",
+        throttle_classes=[AIRecommendationAnonThrottle, AIRecommendationUserThrottle]
+    )
     def ai_recommend_doctor(self, request):
+        """
+        AI Doctor Recommendation endpoint - allows unauthenticated access
+        Rate limited:
+        - Anonymous users: 10 requests per hour per IP
+        - Authenticated users: 30 requests per hour
+        Origin checking enabled in production
+        """
+        # Get client IP for logging
+        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        if x_forwarded_for:
+            ip = x_forwarded_for.split(',')[0]
+        else:
+            ip = request.META.get('REMOTE_ADDR')
+
+        user_id = request.user.id if request.user.is_authenticated else "anonymous"
+        logger.info(f"AI recommendation request from IP: {ip}, User: {user_id}")
+
         symptoms = request.data.get("symptoms")
         language = request.data.get("language", "ru")
-        
+
         if not symptoms:
             return Response({"success": False, "error": "Symptoms are required."}, status=400)
-        
+
         # Debugging: Print the symptoms
         print(f"Symptoms received: {symptoms}")
         
@@ -518,9 +542,18 @@ class ConsultationViewSet(ModelViewSet):
             logger.debug(f"🧠 Ответ AI для экстренности:\n{urgency_reply}")
     
             try:
+                # Helper function to clean and parse JSON
+                def clean_and_parse_json(json_str):
+                    """Clean JSON string by removing markdown code blocks and extra whitespace"""
+                    # Remove markdown code blocks if present
+                    json_str = re.sub(r'^```json\s*', '', json_str.strip())
+                    json_str = re.sub(r'\s*```$', '', json_str.strip())
+                    # Parse JSON (Python's json.loads handles newlines within strings correctly)
+                    return json.loads(json_str)
+
                 # Parse the JSON responses with better error handling
                 try:
-                    specialty_data = json.loads(specialty_reply)
+                    specialty_data = clean_and_parse_json(specialty_reply)
                     specialty = specialty_data["specialty"].strip().lower()
                 except (json.JSONDecodeError, KeyError) as e:
                     logger.error(f"Failed to parse specialty JSON: {e}")
@@ -528,7 +561,7 @@ class ConsultationViewSet(ModelViewSet):
                     raise
 
                 try:
-                    reason_data = json.loads(reason_reply)
+                    reason_data = clean_and_parse_json(reason_reply)
                     reason = reason_data["reason"].strip()
                 except (json.JSONDecodeError, KeyError) as e:
                     logger.error(f"Failed to parse reason JSON: {e}")
@@ -536,7 +569,7 @@ class ConsultationViewSet(ModelViewSet):
                     raise
 
                 try:
-                    urgency_data = json.loads(urgency_reply)
+                    urgency_data = clean_and_parse_json(urgency_reply)
                     urgency_raw = urgency_data["urgency"].strip()
                 except (json.JSONDecodeError, KeyError) as e:
                     logger.error(f"Failed to parse urgency JSON: {e}")
@@ -577,7 +610,55 @@ class ConsultationViewSet(ModelViewSet):
                 logger.warning(f"📨 Ответ от AI (specialty): {specialty_reply}")
                 logger.warning(f"📨 Ответ от AI (reason): {reason_reply}")
                 logger.warning(f"📨 Ответ от AI (urgency): {urgency_reply}")
-    
+
+                # Try to find a fallback doctor (general practitioner/терапевт)
+                fallback_doctors = list(User.objects.filter(
+                    role="doctor",
+                    is_active=True,
+                    availability_status='available',
+                    doctor_specialization__name_ru__icontains='терапевт'
+                )[:10])
+
+                # If no терапевт found, get any available doctor
+                if not fallback_doctors:
+                    fallback_doctors = list(User.objects.filter(
+                        role="doctor",
+                        is_active=True,
+                        availability_status='available'
+                    )[:10])
+
+                if fallback_doctors:
+                    # Select a random fallback doctor
+                    fallback_doctor = random.choice(fallback_doctors)
+                    logger.info(f"🔄 Using fallback doctor: {fallback_doctor.first_name} {fallback_doctor.last_name}")
+
+                    ai_recommendation = AIRecommendationLog.objects.create(
+                        symptoms=symptoms,
+                        ai_raw_response={"specialty": specialty_reply, "reason": reason_reply, "urgency": urgency_reply},
+                        recommended_specialty=specialty,
+                        reason=reason,
+                        matched_doctor=fallback_doctor,
+                        fallback_used=True,
+                        specialty_not_found=specialty,
+                        urgency=urgency
+                    )
+
+                    return Response({
+                        "success": True,
+                        "fallback_used": True,
+                        "requested_specialty": specialty,
+                        "ai_recommendation_id": ai_recommendation.id,
+                        "recommended_doctor": {
+                            "id": fallback_doctor.id,
+                            "name": f"{fallback_doctor.first_name} {fallback_doctor.last_name}",
+                            "doctor_type": fallback_doctor.doctor_specialization.name_ru if fallback_doctor.doctor_specialization else "Терапевт",
+                            "email": fallback_doctor.email,
+                            "reason": reason,
+                            "urgency": urgency,
+                        }
+                    }, status=200)
+
+                # No doctors available at all
                 ai_recommendation = AIRecommendationLog.objects.create(
                     symptoms=symptoms,
                     ai_raw_response={"specialty": specialty_reply, "reason": reason_reply, "urgency": urgency_reply},
@@ -586,18 +667,18 @@ class ConsultationViewSet(ModelViewSet):
                     matched_doctor=None,
                     fallback_used=False,
                     specialty_not_found=specialty,
-                    urgency=urgency  # Store urgency level in the log
+                    urgency=urgency
                 )
 
                 return Response({
                     "success": False,
                     "error": f"No doctor found for '{specialty}'",
                     "fallback_used": False,
-                    "ai_recommendation_id": ai_recommendation.id,  # Include the AI recommendation ID even for fallback
+                    "ai_recommendation_id": ai_recommendation.id,
                     "ai_data": {
                         "specialty": specialty,
                         "reason": reason,
-                        "urgency": urgency,  # Include urgency in the response
+                        "urgency": urgency,
                         "raw_specialty": specialty_reply,
                         "raw_reason": reason_reply,
                         "raw_urgency": urgency_reply
