@@ -4,7 +4,7 @@ from django.shortcuts import get_object_or_404
 from rest_framework.viewsets import ModelViewSet
 from rest_framework.response import Response
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework import status
 from common.models import User
 from .models import Consultation, AIRecommendationLog
@@ -402,21 +402,45 @@ class ConsultationViewSet(ModelViewSet):
         }}
         """
     
-        # Prompt for the reason (in the user's language) with possible urgency check
+        # Detect input language first
+        import re
+        has_english = bool(re.search(r'[a-zA-Z]', symptoms))
+        has_cyrillic = bool(re.search(r'[а-яА-ЯёЁ]', symptoms))
+        has_kazakh = bool(re.search(r'[әғқңөұүһіӘҒҚҢӨҰҮҺІ]', symptoms))
+
+        # Determine language
+        if has_english and not has_cyrillic:
+            detected_lang = "English"
+            lang_instruction = "YOU MUST RESPOND IN ENGLISH ONLY. Use English language for your entire response."
+        elif has_kazakh:
+            detected_lang = "Kazakh"
+            lang_instruction = "YOU MUST RESPOND IN KAZAKH ONLY. Use Kazakh language for your entire response."
+        else:
+            detected_lang = "Russian"
+            lang_instruction = "YOU MUST RESPOND IN RUSSIAN ONLY. Use Russian language for your entire response."
+
+        # Prompt for the reason (in the same language as user's input)
         reason_prompt = f"""
-        You are a medical assistant. The patient described the symptoms: "{symptoms}". 
-        Please provide a detailed explanation of the possible causes, symptoms, and recommendations for treatment or referral to a doctor.
-    
-        1. Provide the **reason** (explanation) in the language the question was asked.
-        2. The explanation should include:
-           - Possible causes for the symptoms.
-           - Additional symptoms or related signs.
-           - Recommendations for treatment or referral.
-        3. Your answer should strictly follow this JSON structure:
-    
+        You are a medical assistant. The patient described symptoms in {detected_lang}: "{symptoms}".
+
+        🚨 CRITICAL LANGUAGE REQUIREMENT 🚨
+        {lang_instruction}
+        DO NOT translate to any other language. DO NOT use Russian if input is English.
+
+        Provide a detailed medical explanation including:
+           - Possible causes for the symptoms
+           - Additional symptoms or related signs
+           - Recommendations for treatment or referral
+
+        Return ONLY a JSON object with this structure:
         {{
-          "reason": "<detailed_explanation_in_user_language>"
+          "reason": "<detailed_explanation_in_{detected_lang}>"
         }}
+
+        EXAMPLES:
+        - Input in English "i have a headache" → Response: {{"reason": "Headaches can be caused by various factors such as stress, tension, dehydration, or lack of sleep..."}} (in English)
+        - Input in Russian "болит голова" → Response: {{"reason": "Боли в голове могут быть вызваны различными факторами..."}} (in Russian)
+        - Input in Kazakh "бас ауырады" → Response: {{"reason": "Бас ауруы әртүрлі себептерден болуы мүмкін..."}} (in Kazakh)
         """
     
         # Third prompt for urgency, separate from the reason
@@ -643,6 +667,31 @@ class ConsultationViewSet(ModelViewSet):
                         urgency=urgency
                     )
 
+                    # Get comprehensive doctor information for fallback
+                    years_of_experience = None
+                    try:
+                        if hasattr(fallback_doctor, 'doctor_profile') and fallback_doctor.doctor_profile:
+                            years_of_experience = fallback_doctor.doctor_profile.years_of_experience
+                    except Exception:
+                        pass
+
+                    # Build multilingual specialization
+                    specialization = {
+                        "ru": fallback_doctor.doctor_specialization.name_ru if fallback_doctor.doctor_specialization else "Терапевт",
+                        "en": fallback_doctor.doctor_specialization.name_en if fallback_doctor.doctor_specialization else "General Practitioner",
+                        "kz": fallback_doctor.doctor_specialization.name_kz if fallback_doctor.doctor_specialization else "Терапевт"
+                    }
+
+                    # Clinic information
+                    clinic_info = None
+                    if fallback_doctor.clinic:
+                        clinic_info = {
+                            "name": fallback_doctor.clinic.name,
+                            "address": fallback_doctor.clinic.address,
+                            "city": fallback_doctor.clinic.city.name_ru if fallback_doctor.clinic.city else None,
+                            "rating": fallback_doctor.clinic.rating
+                        }
+
                     return Response({
                         "success": True,
                         "fallback_used": True,
@@ -651,8 +700,12 @@ class ConsultationViewSet(ModelViewSet):
                         "recommended_doctor": {
                             "id": fallback_doctor.id,
                             "name": f"{fallback_doctor.first_name} {fallback_doctor.last_name}",
-                            "doctor_type": fallback_doctor.doctor_specialization.name_ru if fallback_doctor.doctor_specialization else "Терапевт",
+                            "specialization": specialization,
                             "email": fallback_doctor.email,
+                            "phone": fallback_doctor.phone,
+                            "years_of_experience": years_of_experience,
+                            "clinic": clinic_info,
+                            "language": fallback_doctor.language,
                             "reason": reason,
                             "urgency": urgency,
                         }
@@ -688,7 +741,7 @@ class ConsultationViewSet(ModelViewSet):
             # Select a random doctor
             doctor = random.choice(doctors)
             logger.info(f"👨‍⚕️ Назначен врач: {doctor.first_name} {doctor.last_name} ({doctor.doctor_specialization.name_ru})")
-    
+
             ai_recommendation = AIRecommendationLog.objects.create(
                 symptoms=symptoms,
                 ai_raw_response={"specialty": specialty_reply, "reason": reason_reply, "urgency": urgency_reply},
@@ -699,14 +752,43 @@ class ConsultationViewSet(ModelViewSet):
                 urgency=urgency  # Store urgency level in the log
             )
 
+            # Get comprehensive doctor information
+            years_of_experience = None
+            try:
+                if hasattr(doctor, 'doctor_profile') and doctor.doctor_profile:
+                    years_of_experience = doctor.doctor_profile.years_of_experience
+            except Exception:
+                pass
+
+            # Build multilingual specialization
+            specialization = {
+                "ru": doctor.doctor_specialization.name_ru if doctor.doctor_specialization else "Врач",
+                "en": doctor.doctor_specialization.name_en if doctor.doctor_specialization else "Doctor",
+                "kz": doctor.doctor_specialization.name_kz if doctor.doctor_specialization else "Дәрігер"
+            }
+
+            # Clinic information
+            clinic_info = None
+            if doctor.clinic:
+                clinic_info = {
+                    "name": doctor.clinic.name,
+                    "address": doctor.clinic.address,
+                    "city": doctor.clinic.city.name_ru if doctor.clinic.city else None,
+                    "rating": doctor.clinic.rating
+                }
+
             return Response({
                 "success": True,
                 "ai_recommendation_id": ai_recommendation.id,  # Include the AI recommendation ID
                 "recommended_doctor": {
                     "id": doctor.id,
                     "name": f"{doctor.first_name} {doctor.last_name}",
-                    "doctor_type": doctor.doctor_specialization.name_ru,  # Use doctor_type to match frontend expectation
+                    "specialization": specialization,
                     "email": doctor.email,
+                    "phone": doctor.phone,
+                    "years_of_experience": years_of_experience,
+                    "clinic": clinic_info,
+                    "language": doctor.language,
                     "reason": reason,
                     "urgency": urgency  # Include urgency in the response
                 }
@@ -865,3 +947,76 @@ class ConsultationViewSet(ModelViewSet):
             "message": "Consultation form saved successfully",
             "consultation": serializer.data
         }, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=["get"], url_path="get-random-doctors", permission_classes=[AllowAny])
+    def get_random_doctors(self, request):
+        """
+        Get 5 random available doctors for alternative selection
+        No authentication required - public endpoint
+        """
+        try:
+            # Get all available doctors with related data
+            available_doctors = User.objects.filter(
+                role="doctor",
+                is_active=True,
+                availability_status='available'
+            ).select_related('doctor_specialization', 'clinic', 'doctor_profile')
+
+            # Get 5 random doctors (or less if not enough available)
+            doctor_count = min(available_doctors.count(), 5)
+            random_doctors = random.sample(list(available_doctors), doctor_count)
+
+            logger.info(f"📋 Fetched {doctor_count} random doctors for alternative selection")
+
+            # Format doctor data with comprehensive information
+            doctors_data = []
+            for doctor in random_doctors:
+                # Get years of experience from doctor_profile if exists
+                years_of_experience = None
+                try:
+                    if hasattr(doctor, 'doctor_profile') and doctor.doctor_profile:
+                        years_of_experience = doctor.doctor_profile.years_of_experience
+                except Exception:
+                    pass
+
+                # Build multilingual specialization
+                specialization = {
+                    "ru": doctor.doctor_specialization.name_ru if doctor.doctor_specialization else "Врач общей практики",
+                    "en": doctor.doctor_specialization.name_en if doctor.doctor_specialization else "General Practitioner",
+                    "kz": doctor.doctor_specialization.name_kz if doctor.doctor_specialization else "Жалпы тәжірибелі дәрігер"
+                }
+
+                # Clinic information
+                clinic_info = None
+                if doctor.clinic:
+                    clinic_info = {
+                        "name": doctor.clinic.name,
+                        "address": doctor.clinic.address,
+                        "city": doctor.clinic.city.name_ru if doctor.clinic.city else None,
+                        "rating": doctor.clinic.rating
+                    }
+
+                doctors_data.append({
+                    "id": doctor.id,
+                    "name": f"{doctor.first_name} {doctor.last_name}",
+                    "specialization": specialization,
+                    "email": doctor.email,
+                    "phone": doctor.phone,
+                    "years_of_experience": years_of_experience,
+                    "clinic": clinic_info,
+                    "language": doctor.language,
+                    "urgency": "non_urgent"  # Alternative doctors are for non-urgent consultations
+                })
+
+            return Response({
+                "success": True,
+                "doctors": doctors_data,
+                "count": doctor_count
+            }, status=200)
+
+        except Exception as e:
+            logger.error(f"❌ Error fetching random doctors: {str(e)}")
+            return Response({
+                "success": False,
+                "error": "Failed to fetch alternative doctors"
+            }, status=500)
