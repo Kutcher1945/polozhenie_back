@@ -1,13 +1,15 @@
 from rest_framework import viewsets, status, filters
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.pagination import PageNumberPagination
 from django_filters.rest_framework import DjangoFilterBackend
-from django.db.models import Q
+from django.db.models import Q, Count, Avg
 from django.contrib.gis.geos import Point
 from django.contrib.gis.db.models.functions import Distance
 from django.conf import settings
+from django.utils import timezone
+from datetime import timedelta
 import requests
 import json
 import logging
@@ -344,3 +346,202 @@ class DistrictViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = DistrictSerializer
     permission_classes = [AllowAny]
     filterset_fields = ['city']
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def clinic_stats(request):
+    """
+    API endpoint for admin clinic statistics dashboard
+    GET /api/v1/clinic-stats/
+
+    Returns comprehensive statistics for the clinic including:
+    - Total doctors, nurses, patients
+    - Active and completed consultations
+    - Pending appointments
+    - Revenue and ratings
+    """
+    from common.models import User
+    from consultations.models import Consultation
+    from appointments.models import HomeAppointment
+
+    # Check if user is admin
+    if request.user.role != 'admin':
+        return Response(
+            {'error': 'Only administrators can access this endpoint'},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    try:
+        # Determine if admin is clinic-specific or super admin
+        clinic_id = request.user.clinic_id
+        is_super_admin = clinic_id is None
+
+        # Build base querysets with clinic filtering
+        if is_super_admin:
+            # Super admin sees all data
+            user_filter = Q(is_active=True)
+            consultation_filter = Q()
+            appointment_filter = Q()
+            clinic_filter = Q(is_deleted=False)
+        else:
+            # Clinic admin sees only their clinic's data
+            user_filter = Q(is_active=True, clinic_id=clinic_id)
+            consultation_filter = Q(doctor__clinic_id=clinic_id) | Q(patient__clinic_id=clinic_id)
+            appointment_filter = Q(patient__clinic_id=clinic_id)
+            clinic_filter = Q(id=clinic_id, is_deleted=False)
+
+        # Get user statistics
+        total_doctors = User.objects.filter(user_filter, role='doctor').count()
+        total_nurses = User.objects.filter(user_filter, role='nurse').count()
+        total_patients = User.objects.filter(user_filter, role='patient').count()
+
+        # Get consultation statistics
+        active_consultations = Consultation.objects.filter(
+            consultation_filter,
+            status__in=['pending', 'in_progress']
+        ).count()
+
+        # Completed consultations today
+        today = timezone.now().date()
+        completed_consultations_today = Consultation.objects.filter(
+            consultation_filter,
+            status='completed',
+            updated_at__date=today
+        ).count()
+
+        # Get appointment statistics
+        pending_appointments = HomeAppointment.objects.filter(
+            appointment_filter,
+            status='scheduled'
+        ).count()
+
+        # Calculate monthly revenue (this month)
+        first_day_of_month = today.replace(day=1)
+        total_revenue_month = Consultation.objects.filter(
+            consultation_filter,
+            status='completed',
+            updated_at__gte=first_day_of_month
+        ).aggregate(
+            total=Count('id')
+        )['total'] or 0
+
+        # Multiply by average consultation price (you can adjust this)
+        average_consultation_price = 5000  # 5000 KZT per consultation
+        total_revenue_month = total_revenue_month * average_consultation_price
+
+        # Get average rating from clinics
+        average_rating = Clinics.objects.filter(
+            clinic_filter
+        ).aggregate(
+            avg_rating=Avg('rating')
+        )['avg_rating'] or 0.0
+
+        # Analytics data - Last 7 days trends
+        # Russian day names mapping
+        russian_days = {
+            0: 'Пн',   # Monday
+            1: 'Вт',   # Tuesday
+            2: 'Ср',   # Wednesday
+            3: 'Чт',   # Thursday
+            4: 'Пт',   # Friday
+            5: 'Сб',   # Saturday
+            6: 'Вс'    # Sunday
+        }
+
+        analytics_data = []
+        for i in range(6, -1, -1):  # Last 7 days
+            date = today - timedelta(days=i)
+
+            # Consultations for this day
+            consultations_count = Consultation.objects.filter(
+                consultation_filter,
+                created_at__date=date
+            ).count()
+
+            completed_consultations = Consultation.objects.filter(
+                consultation_filter,
+                status='completed',
+                updated_at__date=date
+            ).count()
+
+            # Appointments for this day
+            appointments_count = HomeAppointment.objects.filter(
+                appointment_filter,
+                created_at__date=date
+            ).count()
+
+            # Revenue for this day
+            daily_revenue = completed_consultations * average_consultation_price
+
+            # New patients registered
+            new_patients = User.objects.filter(
+                user_filter,
+                role='patient',
+                created_at__date=date
+            ).count()
+
+            # Get Russian day name
+            day_name = russian_days[date.weekday()]
+
+            analytics_data.append({
+                'date': date.strftime('%Y-%m-%d'),
+                'day': day_name,
+                'consultations': consultations_count,
+                'completed_consultations': completed_consultations,
+                'appointments': appointments_count,
+                'revenue': daily_revenue,
+                'new_patients': new_patients
+            })
+
+        # User growth data (by role)
+        user_distribution = {
+            'doctors': total_doctors,
+            'nurses': total_nurses,
+            'patients': total_patients
+        }
+
+        # Consultation status distribution
+        consultation_status_distribution = {
+            'pending': Consultation.objects.filter(consultation_filter, status='pending').count(),
+            'in_progress': Consultation.objects.filter(consultation_filter, status='in_progress').count(),
+            'completed': Consultation.objects.filter(consultation_filter, status='completed').count(),
+            'cancelled': Consultation.objects.filter(consultation_filter, status='cancelled').count(),
+        }
+
+        # Get clinic info if admin is clinic-specific
+        clinic_info = None
+        if not is_super_admin:
+            try:
+                clinic = Clinics.objects.get(id=clinic_id)
+                clinic_info = {
+                    'id': clinic.id,
+                    'name': clinic.name,
+                    'address': clinic.address,
+                    'rating': clinic.rating
+                }
+            except Clinics.DoesNotExist:
+                pass
+
+        return Response({
+            'is_super_admin': is_super_admin,
+            'clinic_info': clinic_info,
+            'total_doctors': total_doctors,
+            'total_nurses': total_nurses,
+            'total_patients': total_patients,
+            'active_consultations': active_consultations,
+            'completed_consultations_today': completed_consultations_today,
+            'pending_appointments': pending_appointments,
+            'total_revenue_month': int(total_revenue_month),
+            'average_rating': round(float(average_rating), 1),
+            'analytics_data': analytics_data,
+            'user_distribution': user_distribution,
+            'consultation_status_distribution': consultation_status_distribution
+        })
+
+    except Exception as e:
+        logger.exception("Error fetching clinic statistics")
+        return Response(
+            {'error': 'Failed to fetch statistics', 'details': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )

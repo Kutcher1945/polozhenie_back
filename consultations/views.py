@@ -1020,3 +1020,95 @@ class ConsultationViewSet(ModelViewSet):
                 "success": False,
                 "error": "Failed to fetch alternative doctors"
             }, status=500)
+
+    @action(detail=False, methods=["get"], url_path="get-doctor-time-slots/(?P<doctor_id>[^/.]+)", permission_classes=[AllowAny])
+    def get_doctor_time_slots(self, request, doctor_id=None):
+        """
+        Get available time slots for a specific doctor for the next 7 days
+        Uses existing TimeSlot model to get real availability
+        No authentication required - public endpoint
+        """
+        try:
+            from datetime import datetime, timedelta
+            from .models import TimeSlot
+
+            # Verify doctor exists and is active
+            doctor = User.objects.get(id=doctor_id, role="doctor", is_active=True)
+
+            logger.info(f"📅 Fetching time slots for doctor: {doctor.first_name} {doctor.last_name} (ID: {doctor_id})")
+
+            # Get available time slots from database for next 7 days
+            today = timezone.now().date()
+            end_date = today + timedelta(days=7)
+
+            # Fetch existing time slots
+            existing_slots = TimeSlot.get_available_slots(
+                doctor=doctor,
+                start_date=today,
+                end_date=end_date
+            )
+
+            time_slots = []
+            for slot in existing_slots:
+                time_slots.append({
+                    "id": f"{slot.start_time.date()}_{slot.start_time.strftime('%H:%M')}",
+                    "date": slot.start_time.date().isoformat(),
+                    "time": slot.start_time.strftime('%H:%M'),
+                    "available": slot.can_book(),
+                    "datetime": slot.start_time.isoformat()
+                })
+
+            # If no time slots exist in database, generate default slots for demo
+            if not time_slots:
+                logger.warning(f"⚠️ No time slots in database for doctor {doctor_id}, generating default slots")
+
+                for day_offset in range(7):
+                    slot_date = today + timedelta(days=day_offset)
+
+                    # Skip weekends (Saturday=5, Sunday=6)
+                    if slot_date.weekday() >= 5:
+                        continue
+
+                    # Generate slots from 9:00 to 18:00 (15-minute intervals)
+                    for hour in range(9, 18):
+                        for minute in [0, 15, 30, 45]:
+                            slot_time = f"{hour:02d}:{minute:02d}"
+                            slot_datetime = datetime.combine(slot_date, datetime.strptime(slot_time, "%H:%M").time())
+
+                            # Make it timezone-aware
+                            slot_datetime = timezone.make_aware(slot_datetime)
+
+                            time_slots.append({
+                                "id": f"{slot_date}_{slot_time}",
+                                "date": slot_date.isoformat(),
+                                "time": slot_time,
+                                "available": True,  # All generated slots are available
+                                "datetime": slot_datetime.isoformat()
+                            })
+
+            # Filter to only available slots and limit to 20
+            available_slots = [slot for slot in time_slots if slot['available']][:20]
+
+            logger.info(f"✅ Found {len(available_slots)} available slots for doctor ID {doctor_id}")
+
+            return Response({
+                "success": True,
+                "timeSlots": available_slots,
+                "doctorId": doctor_id,
+                "doctorName": f"{doctor.first_name} {doctor.last_name}"
+            }, status=200)
+
+        except User.DoesNotExist:
+            logger.error(f"❌ Doctor not found: ID {doctor_id}")
+            return Response({
+                "success": False,
+                "error": "Doctor not found"
+            }, status=404)
+        except Exception as e:
+            logger.error(f"❌ Error fetching time slots for doctor {doctor_id}: {str(e)}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return Response({
+                "success": False,
+                "error": "Failed to fetch available time slots"
+            }, status=500)

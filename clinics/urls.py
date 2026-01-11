@@ -6,6 +6,7 @@ from .views import (
     RegionViewSet,
     CityViewSet,
     DistrictViewSet,
+    clinic_stats,
 )
 
 router = DefaultRouter()
@@ -16,5 +17,6 @@ router.register(r'cities', CityViewSet, basename='cities')
 router.register(r'districts', DistrictViewSet, basename='districts')
 
 urlpatterns = [
+    path('clinic-stats/', clinic_stats, name='clinic-stats'),
     path('', include(router.urls)),
 ]
