@@ -12,7 +12,7 @@ from rest_framework import status
 from drf_yasg.utils import swagger_auto_schema
 from django.db.models import Q
 from django.contrib.auth.hashers import make_password
-from .models import User
+from .models import User, DoctorSpecialization, NurseSpecialization
 from rest_framework.authtoken.models import Token
 from .serializers import UserSerializer, UserProfileSerializer
 from .permissions import IsDoctor, IsAdmin, IsNurse
@@ -1081,3 +1081,326 @@ class UserProfileViewSet(ViewSet):
     def test_action(self, request):
         """Test action to see if actions work"""
         return Response({"message": "Test action works!"}, status=status.HTTP_200_OK)
+
+
+class StaffViewSet(ViewSet):
+    """
+    ViewSet for managing staff (doctors and nurses)
+    Only accessible by admins
+    """
+    permission_classes = [IsAuthenticated]
+
+    def list(self, request):
+        """
+        GET /api/v1/staff/
+        List all staff members (doctors and nurses)
+        """
+        # Check if user is admin
+        if request.user.role != 'admin':
+            return Response(
+                {'error': 'Only administrators can access this endpoint'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Get clinic_id if admin is clinic-specific
+        clinic_id = request.user.clinic_id if hasattr(request.user, 'clinic_id') else None
+
+        # Build query
+        if clinic_id:
+            # Clinic admin sees only their clinic's staff (both active and inactive)
+            staff = User.objects.filter(
+                role__in=['doctor', 'nurse'],
+                clinic_id=clinic_id,
+                is_deleted=False
+            )
+        else:
+            # Super admin sees all staff (both active and inactive)
+            staff = User.objects.filter(
+                role__in=['doctor', 'nurse'],
+                is_deleted=False
+            )
+
+        # Serialize staff data
+        staff_data = []
+        for member in staff:
+            specialization = None
+            if member.role == 'doctor' and member.doctor_specialization:
+                specialization = member.doctor_specialization.name_ru
+            elif member.role == 'nurse' and member.nurse_specialization:
+                specialization = member.nurse_specialization.name_ru
+
+            staff_data.append({
+                'id': member.id,
+                'first_name': member.first_name,
+                'last_name': member.last_name,
+                'email': member.email,
+                'phone': member.phone,
+                'role': member.role,
+                'specialization': specialization,
+                'is_active': member.is_active,
+                'availability_status': member.availability_status,
+                'created_at': member.created_at.isoformat() if member.created_at else None,
+                'clinic': {
+                    'id': member.clinic.id,
+                    'name': member.clinic.name
+                } if member.clinic else None
+            })
+
+        return Response(staff_data, status=status.HTTP_200_OK)
+
+    def create(self, request):
+        """
+        POST /api/v1/staff/
+        Create a new staff member (doctor or nurse)
+        """
+        # Check if user is admin
+        if request.user.role != 'admin':
+            return Response(
+                {'error': 'Only administrators can access this endpoint'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Get data from request
+        first_name = request.data.get('first_name')
+        last_name = request.data.get('last_name')
+        email = request.data.get('email')
+        phone = request.data.get('phone')
+        password = request.data.get('password')
+        role = request.data.get('role')  # 'doctor' or 'nurse'
+        specialization = request.data.get('specialization', '')
+
+        # Validate required fields
+        if not all([first_name, last_name, email, phone, password, role]):
+            return Response(
+                {'error': 'Все обязательные поля должны быть заполнены'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Validate role
+        if role not in ['doctor', 'nurse']:
+            return Response(
+                {'error': 'Роль должна быть doctor или nurse'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Validate password length
+        if len(password) < 8:
+            return Response(
+                {'error': 'Пароль должен содержать минимум 8 символов'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Check if email already exists
+        if User.objects.filter(email=email).exists():
+            return Response(
+                {'error': 'Пользователь с таким email уже существует'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Check if phone already exists
+        if phone and User.objects.filter(phone=phone).exists():
+            return Response(
+                {'error': 'Пользователь с таким телефоном уже существует'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            # Determine clinic assignment
+            # Global admins (no clinic_id) can select clinic from request
+            # Clinic admins (have clinic_id) automatically assign to their clinic
+            admin_clinic_id = request.user.clinic_id if hasattr(request.user, 'clinic_id') else None
+
+            if admin_clinic_id:
+                # Clinic admin: use their clinic
+                clinic_id = admin_clinic_id
+            else:
+                # Global admin: use clinic from request (optional)
+                clinic_id = request.data.get('clinic_id')
+
+            clinic = None
+            if clinic_id:
+                from clinics.models import Clinics
+                try:
+                    clinic = Clinics.objects.get(id=clinic_id)
+                except Clinics.DoesNotExist:
+                    return Response(
+                        {'error': 'Клиника не найдена'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+            # Create new staff member
+            new_staff = User.objects.create(
+                first_name=first_name,
+                last_name=last_name,
+                email=email,
+                phone=phone,
+                role=role,
+                is_active=True,
+                is_deleted=False,
+                clinic=clinic
+            )
+
+            # Set password (will be hashed automatically by set_password)
+            new_staff.set_password(password)
+            new_staff.save()
+
+            # Handle specialization (create as simple text for now)
+            if specialization:
+                if role == 'doctor':
+                    # Try to find or create specialization
+                    spec, created = DoctorSpecialization.objects.get_or_create(
+                        name_ru=specialization,
+                        defaults={
+                            'name_kz': specialization,
+                            'name_en': specialization
+                        }
+                    )
+                    new_staff.doctor_specialization = spec
+                elif role == 'nurse':
+                    spec, created = NurseSpecialization.objects.get_or_create(
+                        name_ru=specialization,
+                        defaults={
+                            'name_kz': specialization,
+                            'name_en': specialization
+                        }
+                    )
+                    new_staff.nurse_specialization = spec
+                new_staff.save()
+
+            # Return created staff member data
+            return Response({
+                'id': new_staff.id,
+                'first_name': new_staff.first_name,
+                'last_name': new_staff.last_name,
+                'email': new_staff.email,
+                'phone': new_staff.phone,
+                'role': new_staff.role,
+                'specialization': specialization,
+                'is_active': new_staff.is_active,
+                'created_at': new_staff.created_at.isoformat() if new_staff.created_at else None,
+                'clinic': {
+                    'id': clinic.id,
+                    'name': clinic.name
+                } if clinic else None
+            }, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            logger.exception("Error creating staff member")
+            return Response(
+                {'error': 'Не удалось создать сотрудника', 'details': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    def partial_update(self, request, pk=None):
+        """
+        PATCH /api/v1/staff/{id}/
+        Update staff member (e.g., toggle active status)
+        """
+        # Check if user is admin
+        if request.user.role != 'admin':
+            return Response(
+                {'error': 'Only administrators can access this endpoint'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        try:
+            # Get the staff member
+            staff_member = User.objects.get(id=pk, role__in=['doctor', 'nurse'], is_deleted=False)
+
+            # Check if admin has permission to update this staff member
+            clinic_id = request.user.clinic_id if hasattr(request.user, 'clinic_id') else None
+            if clinic_id and staff_member.clinic_id != clinic_id:
+                return Response(
+                    {'error': 'У вас нет прав для изменения этого сотрудника'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+            # Update availability_status field if provided
+            if 'availability_status' in request.data:
+                staff_member.availability_status = request.data['availability_status']
+                staff_member.save()
+
+            # Update is_active field if provided (for backward compatibility)
+            if 'is_active' in request.data:
+                staff_member.is_active = request.data['is_active']
+                staff_member.save()
+
+            # Get updated specialization
+            specialization = None
+            if staff_member.role == 'doctor' and staff_member.doctor_specialization:
+                specialization = staff_member.doctor_specialization.name_ru
+            elif staff_member.role == 'nurse' and staff_member.nurse_specialization:
+                specialization = staff_member.nurse_specialization.name_ru
+
+            # Return updated staff member data
+            return Response({
+                'id': staff_member.id,
+                'first_name': staff_member.first_name,
+                'last_name': staff_member.last_name,
+                'email': staff_member.email,
+                'phone': staff_member.phone,
+                'role': staff_member.role,
+                'specialization': specialization,
+                'is_active': staff_member.is_active,
+                'availability_status': staff_member.availability_status,
+                'created_at': staff_member.created_at.isoformat() if staff_member.created_at else None,
+                'clinic': {
+                    'id': staff_member.clinic.id,
+                    'name': staff_member.clinic.name
+                } if staff_member.clinic else None
+            }, status=status.HTTP_200_OK)
+
+        except User.DoesNotExist:
+            return Response(
+                {'error': 'Сотрудник не найден'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            logger.exception("Error updating staff member")
+            return Response(
+                {'error': 'Не удалось обновить сотрудника', 'details': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class ClinicsViewSet(ViewSet):
+    """
+    ViewSet for managing clinics.
+    Only accessible by authenticated admins.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def list(self, request):
+        """
+        Get list of all clinics (for global admins to select from)
+        """
+        try:
+            from clinics.models import Clinics
+
+            # Check if user is admin
+            if not hasattr(request.user, 'role') or request.user.role != 'admin':
+                return Response(
+                    {'error': 'У вас нет прав доступа'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+            # Get all clinics
+            clinics = Clinics.objects.filter(is_deleted=False).order_by('name')
+
+            clinics_data = []
+            for clinic in clinics:
+                clinics_data.append({
+                    'id': clinic.id,
+                    'name': clinic.name,
+                    'address': clinic.address if hasattr(clinic, 'address') else None,
+                    'phone': clinic.phone if hasattr(clinic, 'phone') else None,
+                })
+
+            return Response(clinics_data, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            logger.exception("Error fetching clinics")
+            return Response(
+                {'error': 'Не удалось загрузить список клиник', 'details': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
