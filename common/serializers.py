@@ -65,6 +65,8 @@ class UserProfileSerializer(serializers.ModelSerializer):
     immunization_status_display = serializers.SerializerMethodField()
     availability_status_display = serializers.SerializerMethodField()
     date_joined = serializers.DateTimeField(source='created_at', read_only=True)
+    clinic = serializers.SerializerMethodField()
+    clinic_id = serializers.IntegerField(source='clinic.id', read_only=True, allow_null=True)
 
     class Meta:
         model = User
@@ -76,9 +78,19 @@ class UserProfileSerializer(serializers.ModelSerializer):
             'rhesus_factor', 'rhesus_factor_display', 'fluorography_status', 'fluorography_status_display',
             'fluorography_date', 'immunization_status', 'immunization_status_display', 'immunization_date',
             'availability_status', 'availability_status_display', 'availability_note', 'last_seen',
-            'date_joined'
+            'date_joined', 'clinic', 'clinic_id'
         ]
-        read_only_fields = ['email', 'role', 'date_joined']
+        read_only_fields = ['email', 'role', 'date_joined', 'clinic', 'clinic_id']
+
+    def get_clinic(self, obj):
+        """Return clinic information if user has a clinic assigned."""
+        if obj.clinic:
+            return {
+                'id': obj.clinic.id,
+                'name': obj.clinic.name,
+                'address': obj.clinic.address if hasattr(obj.clinic, 'address') else None,
+            }
+        return None
 
     def get_role_display(self, obj):
         return dict(User.ROLE_CHOICES).get(obj.role, "Неизвестно")
