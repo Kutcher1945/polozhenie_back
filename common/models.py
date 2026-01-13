@@ -329,3 +329,34 @@ class NurseProfile(BaseModel):
 # Migration completed: 2025-12-05
 # - 52 tokens successfully migrated
 # - Old table 'common_authtoken' can be dropped manually if needed
+
+
+# class ClinicalProtocol(models.Model):
+#     name = models.TextField()
+#     url = models.URLField(max_length=1000, unique=True)
+
+#     year = models.PositiveSmallIntegerField()
+#     medicine = models.CharField(max_length=255)
+
+#     mkb = models.CharField(max_length=50)
+#     mkb_codes = models.JSONField(default=list)
+
+#     size = models.PositiveIntegerField(help_text="File size in bytes")
+#     extension = models.CharField(max_length=10)
+
+#     modified = models.DateTimeField()
+
+#     created_at = models.DateTimeField(auto_now_add=True)
+#     updated_at = models.DateTimeField(auto_now=True)
+
+#     class Meta:
+#         db_table = "clinical_protocols"
+#         ordering = ["-year", "name"]
+
+#     def __str__(self):
+#         return self.name
+
+#     class Meta:
+#         db_table = "common_clinical_protocols"
+#         verbose_name = "Клинический протокол"
+#         verbose_name_plural = "Клинические протоколы"

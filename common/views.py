@@ -1404,3 +1404,184 @@ class ClinicsViewSet(ViewSet):
                 {'error': 'Не удалось загрузить список клиник', 'details': str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+class PatientsViewSet(ViewSet):
+    """
+    ViewSet for managing patients.
+    Only accessible by authenticated admins.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def list(self, request):
+        """
+        Get list of patients.
+        - Global admins: see all patients
+        - Clinic admins: see only their clinic's patients
+        """
+        try:
+            # Check if user is admin
+            if not hasattr(request.user, 'role') or request.user.role != 'admin':
+                return Response(
+                    {'error': 'У вас нет прав доступа'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+            # Filter patients based on admin's clinic
+            clinic_id = request.user.clinic_id if hasattr(request.user, 'clinic_id') else None
+
+            if clinic_id:
+                # Clinic admin: filter by their clinic
+                patients = User.objects.filter(
+                    role='patient',
+                    clinic_id=clinic_id,
+                    is_deleted=False
+                ).order_by('-created_at')
+            else:
+                # Global admin: get all patients
+                patients = User.objects.filter(
+                    role='patient',
+                    is_deleted=False
+                ).order_by('-created_at')
+
+            patients_data = []
+            for patient in patients:
+                patients_data.append({
+                    'id': patient.id,
+                    'first_name': patient.first_name,
+                    'last_name': patient.last_name,
+                    'email': patient.email,
+                    'phone': patient.phone,
+                    'birth_date': patient.birth_date.isoformat() if patient.birth_date else None,
+                    'gender': patient.gender,
+                    'address': patient.address,
+                    'city': patient.city,
+                    'is_active': patient.is_active,
+                    'created_at': patient.created_at.isoformat() if patient.created_at else None,
+                    'clinic': {
+                        'id': patient.clinic.id,
+                        'name': patient.clinic.name
+                    } if patient.clinic else None
+                })
+
+            return Response(patients_data, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            logger.exception("Error fetching patients")
+            return Response(
+                {'error': 'Не удалось загрузить список пациентов', 'details': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    def create(self, request):
+        """
+        Create a new patient.
+        - Global admins can assign to any clinic (or null)
+        - Clinic admins automatically assign to their clinic
+        """
+        try:
+            # Check if user is admin
+            if not hasattr(request.user, 'role') or request.user.role != 'admin':
+                return Response(
+                    {'error': 'У вас нет прав доступа'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+            # Extract data from request
+            first_name = request.data.get('first_name')
+            last_name = request.data.get('last_name')
+            email = request.data.get('email')
+            phone = request.data.get('phone')
+            password = request.data.get('password')
+            birth_date = request.data.get('birth_date')
+            gender = request.data.get('gender')
+            address = request.data.get('address')
+            city = request.data.get('city')
+
+            # Validate required fields
+            if not all([first_name, last_name, email, phone, password]):
+                return Response(
+                    {'error': 'Пожалуйста, заполните все обязательные поля'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Check if email already exists
+            if User.objects.filter(email=email).exists():
+                return Response(
+                    {'error': 'Пользователь с таким email уже существует'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Check if phone already exists
+            if phone and User.objects.filter(phone=phone).exists():
+                return Response(
+                    {'error': 'Пользователь с таким телефоном уже существует'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Determine clinic assignment
+            admin_clinic_id = request.user.clinic_id if hasattr(request.user, 'clinic_id') else None
+
+            if admin_clinic_id:
+                # Clinic admin: use their clinic
+                clinic_id = admin_clinic_id
+            else:
+                # Global admin: use clinic from request (optional)
+                clinic_id = request.data.get('clinic_id')
+
+            clinic = None
+            if clinic_id:
+                from clinics.models import Clinics
+                try:
+                    clinic = Clinics.objects.get(id=clinic_id)
+                except Clinics.DoesNotExist:
+                    return Response(
+                        {'error': 'Клиника не найдена'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+            # Create new patient
+            new_patient = User.objects.create(
+                first_name=first_name,
+                last_name=last_name,
+                email=email,
+                phone=phone,
+                role='patient',
+                birth_date=birth_date if birth_date else None,
+                gender=gender,
+                address=address,
+                city=city,
+                is_active=True,
+                is_deleted=False,
+                clinic=clinic
+            )
+
+            # Set password (will be hashed automatically)
+            new_patient.set_password(password)
+            new_patient.save()
+
+            # Return created patient data
+            return Response({
+                'id': new_patient.id,
+                'first_name': new_patient.first_name,
+                'last_name': new_patient.last_name,
+                'email': new_patient.email,
+                'phone': new_patient.phone,
+                'birth_date': new_patient.birth_date.isoformat() if new_patient.birth_date else None,
+                'gender': new_patient.gender,
+                'address': new_patient.address,
+                'city': new_patient.city,
+                'is_active': new_patient.is_active,
+                'created_at': new_patient.created_at.isoformat() if new_patient.created_at else None,
+                'clinic': {
+                    'id': clinic.id,
+                    'name': clinic.name
+                } if clinic else None
+            }, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            logger.exception("Error creating patient")
+            return Response(
+                {'error': 'Не удалось создать пациента', 'details': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
