@@ -58,6 +58,7 @@ INSTALLED_APPS = [
     "ai_game",
     "telegram_bot",
     "clinics",
+    "clinical_protocols",
 ]
 
 APPEND_SLASH = False  # Disable appending slashes to URLs
