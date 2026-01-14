@@ -31,12 +31,23 @@ def log_error(msg):
 # DATABASE CONFIG
 # --------------------
 DB_CONFIG = {
-    "dbname": "core_db",
-    "user": "core",
+    "dbname": "zhancare_db",
+    "user": "zhancare",
     "password": "4HPzQt2HyU",
-    "host": "10.100.200.151",
+    "host": "localhost",
     "port": 5432,
 }
+
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.contrib.gis.db.backends.postgis',
+#         'NAME': 'zhancare_db',
+#         'USER': 'zhancare',
+#         'PASSWORD': '4HPzQt2HyU',
+#         'HOST': 'localhost',
+#         'PORT': '5432',
+#     }
+# }
 
 # --------------------
 # API CONFIG

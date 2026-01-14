@@ -1,3 +1,4 @@
+import os
 import json
 import psycopg2
 import requests
@@ -29,10 +30,10 @@ PDF_PATH = "HELLP-СИНДРОМ.pdf"
 PROTOCOL_ID = 1
 
 DB_CONFIG = {
-    "dbname": "core_db",
-    "user": "core",
-    "password": "4HPzQt2HyU",
-    "host": "10.100.200.151",
+    "dbname": "zhancare_db",
+    "user": "zhancare",
+    "password": "4HPzQt2HyU",  # move to ENV in production
+    "host": "localhost",
     "port": 5432,
 }
 
@@ -45,7 +46,9 @@ ALLOWED_TYPES = {
     "definition", "diagnosis", "classification",
     "differential", "treatment", "drugs",
     "algorithm", "complications",
-    "indications", "contraindications", "other"
+    "indications", "contraindications",
+    "metadata",
+    "other"
 }
 
 # =========================================================
@@ -73,7 +76,6 @@ RULES:
 OUTPUT:
 {
   "content_type": "string",
-  "title": "string or empty",
   "confidence": number between 0 and 1
 }
 """
@@ -81,7 +83,10 @@ OUTPUT:
 # =========================================================
 # MISTRAL CALL
 # =========================================================
-def classify_with_mistral(text):
+def classify_with_mistral(text: str) -> dict:
+    if len(text.strip()) < 50:
+        return {"content_type": "other", "confidence": 0.0}
+
     payload = {
         "model": "open-mistral-nemo",
         "messages": [
@@ -89,7 +94,7 @@ def classify_with_mistral(text):
             {"role": "user", "content": text[:6000]}
         ],
         "temperature": 0.0,
-        "max_tokens": 200
+        "max_tokens": 150
     }
 
     headers = {
@@ -105,53 +110,123 @@ def classify_with_mistral(text):
     )
     response.raise_for_status()
 
-    raw = response.json()["choices"][0]["message"]["content"]
-
     try:
+        raw = response.json()["choices"][0]["message"]["content"]
         result = json.loads(raw)
-    except json.JSONDecodeError:
-        return {"content_type": "other", "title": "", "confidence": 0.0}
+    except Exception:
+        return {"content_type": "other", "confidence": 0.0}
 
-    if result.get("content_type") not in ALLOWED_TYPES:
-        result["content_type"] = "other"
+    ct = result.get("content_type", "other")
+    conf = float(result.get("confidence", 0))
 
-    if float(result.get("confidence", 0)) < 0.6:
-        result["content_type"] = "other"
+    if ct not in ALLOWED_TYPES or conf < 0.6:
+        return {"content_type": "other", "confidence": conf}
 
-    return result
+    return {"content_type": ct, "confidence": conf}
 
 # =========================================================
 # HEADING DETECTION
 # =========================================================
-HEADING_PATTERNS = [
-    r"^[IVX]+\.",                  # I. II. III.
-    r"^\d+(\.\d+)*\s",             # 1. 1.1 2.3
-    r"^КЛИНИЧЕСКИЙ ПРОТОКОЛ",
-    r"^ВВОДНАЯ ЧАСТЬ",
-    r"^ДИАГНОСТ",
-    r"^КЛАССИФ",
-    r"^ЛЕЧЕНИ",
-    r"^АЛГОРИТМ",
-    r"^ОСЛОЖНЕНИ",
-    r"^ПОКАЗАНИ",
-    r"^ПРОТИВОПОКАЗАНИ",
-]
+NUM_HEADING_RE = re.compile(r"^(?:[IVX]+\.|\d+(?:\.\d+)*)\s+")
 
-def is_heading(line):
-    if line.isupper() and len(line) < 120:
+KEYWORD_HEADINGS = (
+    "КЛИНИЧЕСКИЙ ПРОТОКОЛ",
+    "ВВОДНАЯ ЧАСТЬ",
+    "ДИАГНОСТ",
+    "КЛАССИФ",
+    "ЛЕЧЕНИ",
+    "АЛГОРИТМ",
+    "ОСЛОЖНЕНИ",
+    "ПОКАЗАНИЯ",
+    "ПРОТИВОПОКАЗАНИЯ",
+    "ПРИЛОЖЕНИЕ",
+)
+
+def is_heading(line: str) -> bool:
+    s = line.strip()
+    if not s:
+        return False
+
+    if NUM_HEADING_RE.match(s):
         return True
-    for pattern in HEADING_PATTERNS:
-        if re.match(pattern, line, re.IGNORECASE):
-            return True
+
+    if s.isupper() and len(s) < 120:
+        return True
+
+    u = s.upper()
+    if any(u.startswith(k) for k in KEYWORD_HEADINGS) and (s.endswith(":") or s.isupper()):
+        return True
+
     return False
 
 # =========================================================
-# PDF EXTRACTION (CORRECT)
+# SPLIT COLON HEADINGS (CRITICAL FIX)
+# =========================================================
+def split_heading_line(line: str):
+    """
+    Splits:
+    '1.7 Определение [1,2]: HELLP-синдром – ...'
+    into:
+    title = '1.7 Определение [1,2]'
+    spillover = 'HELLP-синдром – ...'
+    """
+    if ":" in line:
+        left, right = line.split(":", 1)
+        return left.strip(), right.strip()
+    return line.strip(), None
+
+# =========================================================
+# METADATA DETECTION
+# =========================================================
+def is_metadata_block(title: str, content: str) -> bool:
+    t = (title + " " + content).upper()
+
+    METADATA_MARKERS = (
+        "ОДОБРЕН",
+        "КЛИНИЧЕСКИЙ ПРОТОКОЛ",
+        "МКБ-10",
+        "ДАТА РАЗРАБОТКИ",
+        "СОКРАЩЕНИЯ",
+        "СПИСОК РАЗРАБОТЧИКОВ",
+        "РЕЦЕНЗЕНТЫ",
+        "КОНФЛИКТА ИНТЕРЕСОВ",
+        "СПИСОК ИСПОЛЬЗОВАННОЙ ЛИТЕРАТУРЫ",
+        "IGO LICENCE",
+        "CREATIVE COMMONS",
+    )
+
+    return any(m in t for m in METADATA_MARKERS)
+
+# =========================================================
+# PDF EXTRACTION (FINAL)
 # =========================================================
 def extract_pdf_blocks(path):
     blocks = []
-    current_lines = []
+    title_lines = []
+    body_lines = []
     page_from = None
+    last_page = None
+
+    def flush():
+        nonlocal title_lines, body_lines, page_from, last_page
+        if not body_lines:
+            title_lines.clear()
+            body_lines.clear()
+            page_from = None
+            last_page = None
+            return
+
+        blocks.append({
+            "page_from": page_from,
+            "page_to": last_page,
+            "title": " ".join(title_lines).strip(),
+            "content": "\n".join(body_lines).strip()
+        })
+
+        title_lines.clear()
+        body_lines.clear()
+        page_from = None
+        last_page = None
 
     with pdfplumber.open(path) as pdf:
         for page_num, page in enumerate(pdf.pages, start=1):
@@ -162,29 +237,38 @@ def extract_pdf_blocks(path):
             lines = [l.strip() for l in text.split("\n") if l.strip()]
 
             for line in lines:
-                if is_heading(line) and current_lines:
-                    blocks.append((
-                        page_from,
-                        page_num,
-                        "\n".join(current_lines)
-                    ))
-                    current_lines = []
-                    page_from = page_num
+                line = (
+                    line.replace("\uf0b7", "•")
+                        .replace("￾", "-")
+                        .replace("–", "-")
+                )
 
-                if page_from is None:
-                    page_from = page_num
+                if is_heading(line):
+                    if body_lines:
+                        flush()
 
-                current_lines.append(line)
+                    if page_from is None:
+                        page_from = page_num
 
-        if current_lines:
-            blocks.append((page_from, page_num, "\n".join(current_lines)))
+                    title_part, spillover = split_heading_line(line)
+                    title_lines.append(title_part)
 
+                    if spillover:
+                        body_lines.append(spillover)
+                else:
+                    if page_from is None:
+                        page_from = page_num
+                    body_lines.append(line)
+
+                last_page = page_num
+
+    flush()
     return blocks
 
 # =========================================================
 # DB INSERT
 # =========================================================
-def insert_content(cur, protocol_id, result, text, page_from, page_to, order):
+def insert_content(cur, protocol_id, block, result, order):
     cur.execute("""
         INSERT INTO clinical_protocols_content
         (protocol_id, content_type, title, content,
@@ -194,12 +278,12 @@ def insert_content(cur, protocol_id, result, text, page_from, page_to, order):
     """, (
         protocol_id,
         result["content_type"],
-        result.get("title", ""),
-        text,
-        page_from,
-        page_to,
+        block["title"],
+        block["content"],
+        block["page_from"],
+        block["page_to"],
         "pdf+mistral",
-        float(result.get("confidence", 0)),
+        result["confidence"],
         order
     ))
 
@@ -216,20 +300,19 @@ def main():
     info(f"Blocks detected: {len(blocks)}")
 
     try:
-        for idx, (p_from, p_to, text) in enumerate(
-            tqdm(blocks, desc="Classifying blocks"), start=1
-        ):
-            info(f"Block {idx}: pages {p_from}-{p_to}")
+        for idx, block in enumerate(tqdm(blocks, desc="Classifying blocks"), start=1):
+            info(f"Block {idx}: pages {block['page_from']}-{block['page_to']}")
 
-            result = classify_with_mistral(text)
+            if is_metadata_block(block["title"], block["content"]):
+                result = {"content_type": "metadata", "confidence": 1.0}
+            else:
+                result = classify_with_mistral(block["content"])
 
             insert_content(
                 cur,
                 PROTOCOL_ID,
+                block,
                 result,
-                text,
-                p_from,
-                p_to,
                 idx
             )
 
