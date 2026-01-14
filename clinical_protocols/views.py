@@ -11,6 +11,7 @@ from drf_yasg import openapi
 from .models import ClinicalProtocol, ClinicalProtocolContent
 from .serializers import (
     ClinicalProtocolSerializer,
+    ClinicalProtocolListSerializer,
     ClinicalProtocolContentSerializer,
     ProtocolQuestionSerializer,
     ProtocolAnswerSerializer,
@@ -22,7 +23,7 @@ class ClinicalProtocolViewSet(viewsets.ReadOnlyModelViewSet):
     """
     ViewSet for viewing clinical protocols
 
-    list: Get all protocols
+    list: Get all protocols (lightweight - only counts, not full content)
     retrieve: Get a specific protocol with all its content
 
     NOTE: Publicly accessible for protocol-ai page
@@ -30,6 +31,27 @@ class ClinicalProtocolViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = ClinicalProtocol.objects.all()
     serializer_class = ClinicalProtocolSerializer
     permission_classes = [AllowAny]  # Public access for protocol-ai page
+
+    def get_queryset(self):
+        """Optimize queryset for list view"""
+        queryset = super().get_queryset()
+
+        # For list view, use annotation to count contents instead of loading them
+        if self.action == 'list':
+            from django.db.models import Count
+            queryset = queryset.annotate(content_count=Count('contents'))
+            # Don't prefetch contents for list view to improve performance
+        else:
+            # For detail view, prefetch contents
+            queryset = queryset.prefetch_related('contents')
+
+        return queryset
+
+    def get_serializer_class(self):
+        """Use lightweight serializer for list view"""
+        if self.action == 'list':
+            return ClinicalProtocolListSerializer
+        return ClinicalProtocolSerializer
 
     @swagger_auto_schema(
         method='post',
