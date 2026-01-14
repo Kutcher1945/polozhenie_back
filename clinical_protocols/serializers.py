@@ -30,8 +30,27 @@ class ClinicalProtocolContentSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at']
 
 
+class ClinicalProtocolListSerializer(serializers.ModelSerializer):
+    """Lightweight serializer for protocol list view (no full contents)"""
+    content_count = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = ClinicalProtocol
+        fields = [
+            'id',
+            'name',
+            'url',
+            'year',
+            'medicine',
+            'mkb',
+            'mkb_codes',
+            'content_count',  # Just the count, not the full data
+        ]
+        read_only_fields = ['id']
+
+
 class ClinicalProtocolSerializer(serializers.ModelSerializer):
-    """Serializer for clinical protocols"""
+    """Serializer for clinical protocols (with full contents for detail view)"""
     contents = ClinicalProtocolContentSerializer(many=True, read_only=True)
 
     class Meta:
@@ -88,6 +107,7 @@ class ProtocolAnswerSourceSerializer(serializers.Serializer):
     """Serializer for source sections in answer"""
     protocol_id = serializers.IntegerField()
     protocol_name = serializers.CharField()
+    protocol_url = serializers.URLField(allow_null=True, required=False)
     content_type = serializers.CharField()
     content_type_display = serializers.CharField()
     title = serializers.CharField()

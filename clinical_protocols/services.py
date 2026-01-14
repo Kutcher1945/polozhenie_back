@@ -7,7 +7,7 @@ import requests
 import json
 from typing import List, Dict, Any
 from django.conf import settings
-from django.db.models import Q
+from django.db.models import Q, Count
 from .models import ClinicalProtocol, ClinicalProtocolContent
 
 
@@ -18,6 +18,26 @@ class ClinicalProtocolRAG:
         self.api_key = os.getenv("MISTRAL_API_KEY", getattr(settings, "MISTRAL_API_KEY", ""))
         self.api_url = "https://api.mistral.ai/v1/chat/completions"
         self.model = "open-mistral-nemo"
+
+    def preprocess_query(self, query: str) -> str:
+        """
+        Preprocess user query to handle common variations and typos
+        """
+        query_lower = query.lower().strip()
+
+        # Common medical term variations and typos
+        replacements = {
+            'help': 'hellp',  # Common typo for HELLP syndrome
+            'хелп': 'hellp',  # Cyrillic typo
+            'хэлп': 'hellp',  # Another Cyrillic variation
+        }
+
+        # Replace known variations
+        for typo, correct in replacements.items():
+            if typo in query_lower:
+                query_lower = query_lower.replace(typo, correct)
+
+        return query_lower
 
     def search_relevant_content(
         self,
@@ -30,6 +50,9 @@ class ClinicalProtocolRAG:
         Search for relevant content sections based on user query
         Uses simple text matching - can be upgraded to vector embeddings later
         """
+        # Preprocess query to handle typos and variations
+        processed_query = self.preprocess_query(query)
+
         # Build base query
         queryset = ClinicalProtocolContent.objects.all()
 
@@ -41,12 +64,12 @@ class ClinicalProtocolRAG:
         if content_types:
             queryset = queryset.filter(content_type__in=content_types)
 
-        # Search in title and content
-        query_words = query.lower().split()
+        # Search in title and content using processed query
+        query_words = processed_query.split()
         q_objects = Q()
 
         for word in query_words:
-            q_objects |= Q(title__icontains=word) | Q(content__icontains=word)
+            q_objects |= Q(title__icontains=word) | Q(content__icontains=word) | Q(protocol__name__icontains=word)
 
         queryset = queryset.filter(q_objects)
 
@@ -58,6 +81,7 @@ class ClinicalProtocolRAG:
             {
                 'protocol_id': item.protocol_id,
                 'protocol_name': item.protocol.name,
+                'protocol_url': item.protocol.url if hasattr(item.protocol, 'url') else None,
                 'content_type': item.content_type,
                 'content_type_display': item.get_content_type_display(),
                 'title': item.title,
@@ -79,6 +103,43 @@ class ClinicalProtocolRAG:
         ).filter(content_count__gt=0).values('id', 'name', 'content_count')
 
         return list(protocols)
+
+    def get_protocol_availability_message(self, language: str = "ru") -> str:
+        """
+        Generate a message about which protocols are available and which have full data
+        """
+        protocols = ClinicalProtocol.objects.annotate(
+            content_count=Count('contents')
+        ).all()
+
+        protocols_with_content = []
+        protocols_without_content = []
+
+        for protocol in protocols:
+            if protocol.content_count > 0:
+                protocols_with_content.append({
+                    'name': protocol.name,
+                    'count': protocol.content_count
+                })
+            else:
+                protocols_without_content.append(protocol.name)
+
+        if language == "ru":
+            msg_parts = []
+
+            if protocols_with_content:
+                msg_parts.append("📚 **Протоколы с полными данными:**")
+                for p in protocols_with_content:
+                    msg_parts.append(f"- **{p['name']}** ({p['count']} секций)")
+
+            if protocols_without_content:
+                msg_parts.append("\n📋 **Протоколы в базе (данные в процессе загрузки):**")
+                for name in protocols_without_content:
+                    msg_parts.append(f"- {name}")
+
+            return "\n".join(msg_parts)
+
+        return ""
 
     def build_context(self, relevant_sections: List[Dict[str, Any]]) -> str:
         """Build context string from relevant sections for AI"""
@@ -216,17 +277,45 @@ class ClinicalProtocolRAG:
             limit=10
         )
 
-        # Step 2: Build context
+        # Step 2: Check if we found any content
+        if not relevant_sections:
+            # No content found - provide helpful information about available protocols
+            availability_msg = self.get_protocol_availability_message(language)
+
+            if language == "ru":
+                answer = f"""К сожалению, в предоставленном контексте нет информации, которая могла бы помочь ответить на ваш вопрос.
+
+{availability_msg}
+
+Пожалуйста, попробуйте задать вопрос по протоколу HELLP-СИНДРОМ, или дождитесь загрузки данных по другим протоколам."""
+            else:
+                answer = "No relevant information found in the database."
+
+            return {
+                "question": question,
+                "answer": answer,
+                "success": True,
+                "error": None,
+                "metadata": {
+                    "model": None,
+                    "usage": None,
+                    "num_sources": 0,
+                    "language": language,
+                },
+                "sources": []
+            }
+
+        # Step 3: Build context
         context = self.build_context(relevant_sections)
 
-        # Step 3: Generate answer using AI
+        # Step 4: Generate answer using AI
         ai_response = self.ask_mistral(
             user_question=question,
             context=context,
             language=language
         )
 
-        # Step 4: Build final response
+        # Step 5: Build final response
         response = {
             "question": question,
             "answer": ai_response.get("answer"),
