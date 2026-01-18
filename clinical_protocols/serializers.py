@@ -77,7 +77,7 @@ class ProtocolQuestionSerializer(serializers.Serializer):
     """Serializer for RAG question input"""
     question = serializers.CharField(
         required=True,
-        min_length=3,
+        min_length=1,
         max_length=500,
         help_text="Вопрос пользователя о клиническом протоколе"
     )
@@ -123,6 +123,9 @@ class ProtocolAnswerMetadataSerializer(serializers.Serializer):
     usage = serializers.DictField(allow_null=True)
     num_sources = serializers.IntegerField()
     language = serializers.CharField()
+    is_greeting = serializers.BooleanField(required=False)
+    total_protocols = serializers.IntegerField(required=False)
+    interactive_protocols = serializers.ListField(required=False)
 
 
 class ProtocolAnswerSerializer(serializers.Serializer):
