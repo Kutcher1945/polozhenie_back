@@ -622,16 +622,60 @@ I am an AI assistant for clinical protocols. I can help you find information abo
 
         # Step 2: Check if we found any content
         if not relevant_sections:
-            # No content found - provide helpful information about available protocols
+            # No content found - check if user is asking about a specific protocol
+            # Try to find the protocol in the database by name
+            preprocessed_query = self.preprocess_query(question)
+
+            # Search for protocol by name in the question
+            all_protocols = ClinicalProtocol.objects.annotate(
+                content_count=Count('contents')
+            ).all()
+
+            # Try to match protocol name in the question
+            mentioned_protocol = None
+            for protocol in all_protocols:
+                protocol_name_lower = protocol.name.lower()
+                # Check if protocol name is mentioned in question
+                if protocol_name_lower in preprocessed_query or preprocessed_query in protocol_name_lower:
+                    mentioned_protocol = protocol
+                    break
+
+            # Get availability data
             availability_data = self.get_protocol_availability_message(language, limit=10)
             availability_msg = availability_data["message"]
 
-            if language == "ru":
-                answer = f"""К сожалению, в предоставленном контексте нет информации, которая могла бы помочь ответить на ваш вопрос.
+            # If user asked about a specific protocol that exists but has no content
+            if mentioned_protocol and mentioned_protocol.content_count == 0:
+                if language == "ru":
+                    answer = f"""Протокол **"{mentioned_protocol.name}"** зарегистрирован в нашей системе, но его детальное содержание находится в процессе загрузки нашими специалистами по данным.
 
-{availability_msg}"""
+📋 **Базовая информация:**
+• Название: {mentioned_protocol.name}
+• Год: {mentioned_protocol.year}
+• Медицина: {mentioned_protocol.medicine}
+• МКБ: {mentioned_protocol.mkb}
+
+⏳ **Статус:** Данные в процессе обработки
+
+На данный момент полные данные доступны для следующих протоколов:
+
+{availability_msg}
+
+Пожалуйста, попробуйте задать вопрос по протоколам с полными данными, или дождитесь завершения загрузки протокола "{mentioned_protocol.name}"."""
+                else:
+                    answer = f"""Protocol **"{mentioned_protocol.name}"** is registered in our system, but its detailed content is being loaded by our data specialists.
+
+Please try asking about protocols with full data available."""
             else:
-                answer = "No relevant information found in the database."
+                # General "no content found" message
+                if language == "ru":
+                    answer = f"""К сожалению, в предоставленном контексте нет информации, которая могла бы помочь ответить на ваш вопрос.
+
+{availability_msg}
+
+Попробуйте задать вопрос по доступным протоколам или переформулируйте ваш вопрос."""
+                else:
+                    answer = "No relevant information found in the database."
 
             return {
                 "question": question,
@@ -643,6 +687,7 @@ I am an AI assistant for clinical protocols. I can help you find information abo
                     "usage": None,
                     "num_sources": 0,
                     "language": language,
+                    "mentioned_protocol": mentioned_protocol.name if mentioned_protocol else None,
                 },
                 "sources": []
             }
