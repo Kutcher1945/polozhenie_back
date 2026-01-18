@@ -1,4 +1,4 @@
-#!/home/corettaxkutcher/zhancare_group/zhancare_back_experiment/venv/bin/python3
+#!/home/adilannister/zhancare_group/experimental_admin_back/venv/bin/python3
 # -*- coding: utf-8 -*-
 import re
 import sys
