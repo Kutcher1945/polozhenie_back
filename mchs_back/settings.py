@@ -59,6 +59,7 @@ INSTALLED_APPS = [
     "telegram_bot",
     "clinics",
     "clinical_protocols",
+    "questionnaire",
 ]
 
 APPEND_SLASH = False  # Disable appending slashes to URLs
@@ -240,6 +241,20 @@ DATABASES = {
         'PORT': '5432',
     }
 }
+
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.contrib.gis.db.backends.postgis',
+#         'NAME': 'zhancare_db',
+#         'USER': 'zhancare_admin',
+#         'PASSWORD': os.environ.get('DB_PASSWORD'),  # ❗ НЕ хардкодь
+#         'HOST': 'kz1-a-a0denofiul3t07t0.mdb.yandexcloud.kz',
+#         'PORT': '6432',  # PgBouncer
+#         'OPTIONS': {
+#             'sslmode': 'require',
+#         },
+#     }
+# }
 
 MISTRAL_API_KEY="QqkMxELY0YVGkCx17Vya04Sq9nGvCahu"
 
