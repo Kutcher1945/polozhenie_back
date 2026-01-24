@@ -1,5 +1,6 @@
 import random
 import string
+from django.views.decorators.csrf import csrf_exempt
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
@@ -18,6 +19,7 @@ def generate_simple_password(length=8):
     return password
 
 
+@csrf_exempt
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def submit_questionnaire(request):
