@@ -29,6 +29,7 @@ urlpatterns = [
     path("api/v1/", include("ai_game.urls")),
     path("api/v1/", include("clinics.urls")),
     path("api/v1/", include("clinical_protocols.urls")),
+    path("api/v1/", include("questionnaire.urls")),
     path('accounts/', include('django.contrib.auth.urls')),
 
     # Swagger/ReDoc endpoints with multiple auth methods
