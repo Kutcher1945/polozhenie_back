@@ -47,13 +47,20 @@ def submit_questionnaire(request):
     # Generate simple password
     password = generate_simple_password(8)
 
+    # Extract name from email for default value
+    email_name = email.split('@')[0]
+    # Capitalize and use as default first name
+    default_first_name = email_name.capitalize() if email_name else "Пользователь"
+
     try:
-        # Create user
+        # Create user with default first_name
         user = User.objects.create_user(
             email=email,
             password=password,
             role='patient',
-            is_active=True
+            is_active=True,
+            first_name=default_first_name,
+            last_name=""  # Empty but not null
         )
 
         # Create questionnaire record
