@@ -57,6 +57,7 @@ INSTALLED_APPS = [
     "common",  # Your custom app
     "appointments",
     "consultations",
+    "payments",
     "ai_game",
     "telegram_bot",
     "clinics",

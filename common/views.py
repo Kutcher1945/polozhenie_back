@@ -1757,3 +1757,302 @@ class SessionViewSet(ViewSet):
             except Exception:
                 pass
         return None
+
+
+class ReportsViewSet(ViewSet):
+    """
+    ViewSet for generating admin reports and analytics.
+    Only accessible by authenticated admins.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def list(self, request):
+        """
+        GET /api/v1/reports/
+        Get comprehensive reports with optional date filtering.
+        Query params: start (date), end (date)
+        """
+        from django.db.models import Count, Sum
+        from django.db.models.functions import TruncMonth, ExtractYear
+        from consultations.models import Consultation
+        from appointments.models import HomeAppointment
+        from payments.models import HomeAppointmentKaspiPayment
+        from datetime import datetime
+
+        # Check if user is admin
+        if not hasattr(request.user, 'role') or request.user.role != 'admin':
+            return Response(
+                {'error': 'У вас нет прав доступа'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Parse date range from query params
+        start_date_str = request.GET.get('start')
+        end_date_str = request.GET.get('end')
+
+        try:
+            if start_date_str:
+                start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+            else:
+                # Default: beginning of current year
+                start_date = datetime(datetime.now().year, 1, 1).date()
+
+            if end_date_str:
+                end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+            else:
+                # Default: today
+                end_date = datetime.now().date()
+        except ValueError:
+            return Response(
+                {'error': 'Неверный формат даты. Используйте YYYY-MM-DD'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Get clinic filter if admin is clinic-specific
+        clinic_id = request.user.clinic_id if hasattr(request.user, 'clinic_id') and request.user.clinic_id else None
+
+        # ==================== REVENUE REPORT ====================
+        # Get payments for home appointments
+        payments_query = HomeAppointmentKaspiPayment.objects.filter(
+            status='paid',
+            created_at__date__gte=start_date,
+            created_at__date__lte=end_date
+        )
+        if clinic_id:
+            payments_query = payments_query.filter(appointment__patient__clinic_id=clinic_id)
+
+        total_revenue = payments_query.aggregate(total=Sum('amount'))['total'] or 0
+
+        # Monthly revenue
+        monthly_revenue_qs = payments_query.annotate(
+            month=TruncMonth('created_at')
+        ).values('month').annotate(
+            revenue=Sum('amount')
+        ).order_by('month')
+
+        month_names = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек']
+        monthly_revenue = [
+            {
+                'month': month_names[item['month'].month - 1],
+                'revenue': float(item['revenue'] or 0)
+            }
+            for item in monthly_revenue_qs
+        ]
+
+        # Revenue by service type (home appointments for now)
+        revenue_by_service = [
+            {
+                'service': 'Записи на дом',
+                'revenue': float(total_revenue),
+                'count': payments_query.count()
+            }
+        ]
+
+        # ==================== CONSULTATION REPORT ====================
+        consultations_query = Consultation.objects.filter(
+            created_at__date__gte=start_date,
+            created_at__date__lte=end_date,
+            is_deleted=False
+        )
+        if clinic_id:
+            consultations_query = consultations_query.filter(
+                Q(patient__clinic_id=clinic_id) | Q(doctor__clinic_id=clinic_id)
+            )
+
+        total_consultations = consultations_query.count()
+
+        # Consultations by status
+        status_mapping = {
+            'pending': 'Ожидание',
+            'ongoing': 'В процессе',
+            'completed': 'Завершено',
+            'cancelled': 'Отменено',
+            'missed': 'Пропущено',
+            'scheduled': 'Запланировано',
+        }
+        consultations_by_status = consultations_query.values('status').annotate(
+            count=Count('id')
+        ).order_by('-count')
+
+        by_status = [
+            {
+                'status': status_mapping.get(item['status'], item['status']),
+                'count': item['count']
+            }
+            for item in consultations_by_status
+        ]
+
+        # Consultations by doctor (top 10)
+        consultations_by_doctor = consultations_query.values(
+            'doctor__first_name', 'doctor__last_name', 'doctor_id'
+        ).annotate(
+            consultations=Count('id')
+        ).order_by('-consultations')[:10]
+
+        by_doctor = [
+            {
+                'doctor_name': f"Доктор {item['doctor__first_name'] or ''} {item['doctor__last_name'] or ''}".strip(),
+                'consultations': item['consultations'],
+                'revenue': 0  # TODO: Add consultation pricing when available
+            }
+            for item in consultations_by_doctor
+        ]
+
+        # Consultations by specialization
+        consultations_by_spec = consultations_query.values(
+            'doctor__doctor_specialization__name_ru'
+        ).annotate(
+            count=Count('id')
+        ).order_by('-count')[:10]
+
+        by_specialization = [
+            {
+                'specialization': item['doctor__doctor_specialization__name_ru'] or 'Без специализации',
+                'count': item['count']
+            }
+            for item in consultations_by_spec
+        ]
+
+        # ==================== APPOINTMENT REPORT ====================
+        appointments_query = HomeAppointment.objects.filter(
+            created_at__date__gte=start_date,
+            created_at__date__lte=end_date,
+            is_deleted=False
+        )
+        if clinic_id:
+            appointments_query = appointments_query.filter(
+                Q(patient__clinic_id=clinic_id) | Q(nurse__clinic_id=clinic_id)
+            )
+
+        total_appointments = appointments_query.count()
+
+        # Appointments by status
+        appt_status_mapping = {
+            'scheduled': 'Запланировано',
+            'assigned': 'Назначено',
+            'in_progress': 'В процессе',
+            'completed': 'Завершено',
+            'cancelled': 'Отменено',
+        }
+        appointments_by_status = appointments_query.values('status').annotate(
+            count=Count('id')
+        ).order_by('-count')
+
+        appt_by_status = [
+            {
+                'status': appt_status_mapping.get(item['status'], item['status']),
+                'count': item['count']
+            }
+            for item in appointments_by_status
+        ]
+
+        # Appointments by nurse (top 10)
+        appointments_by_nurse = appointments_query.filter(
+            nurse__isnull=False
+        ).values(
+            'nurse__first_name', 'nurse__last_name'
+        ).annotate(
+            appointments=Count('id')
+        ).order_by('-appointments')[:10]
+
+        by_nurse = [
+            {
+                'nurse_name': f"Медсестра {item['nurse__first_name'] or ''} {item['nurse__last_name'] or ''}".strip(),
+                'appointments': item['appointments']
+            }
+            for item in appointments_by_nurse
+        ]
+
+        # ==================== PATIENT REPORT ====================
+        patients_query = User.objects.filter(
+            role='patient',
+            is_deleted=False
+        )
+        if clinic_id:
+            patients_query = patients_query.filter(clinic_id=clinic_id)
+
+        total_patients = patients_query.count()
+
+        # New patients by month (within date range)
+        new_patients_monthly_qs = patients_query.filter(
+            created_at__date__gte=start_date,
+            created_at__date__lte=end_date
+        ).annotate(
+            month=TruncMonth('created_at')
+        ).values('month').annotate(
+            count=Count('id')
+        ).order_by('month')
+
+        new_patients_monthly = [
+            {
+                'month': month_names[item['month'].month - 1],
+                'count': item['count']
+            }
+            for item in new_patients_monthly_qs
+        ]
+
+        # Patients by age group
+        from datetime import date
+        today = date.today()
+
+        def calculate_age(birth_date):
+            if not birth_date:
+                return None
+            return today.year - birth_date.year - ((today.month, today.day) < (birth_date.month, birth_date.day))
+
+        # Get patients with birth dates
+        patients_with_age = patients_query.filter(birth_date__isnull=False)
+
+        age_groups = {
+            '0-17': 0,
+            '18-30': 0,
+            '31-50': 0,
+            '51-70': 0,
+            '70+': 0
+        }
+
+        for patient in patients_with_age:
+            age = calculate_age(patient.birth_date)
+            if age is not None:
+                if age <= 17:
+                    age_groups['0-17'] += 1
+                elif age <= 30:
+                    age_groups['18-30'] += 1
+                elif age <= 50:
+                    age_groups['31-50'] += 1
+                elif age <= 70:
+                    age_groups['51-70'] += 1
+                else:
+                    age_groups['70+'] += 1
+
+        by_age_group = [
+            {'age_group': group, 'count': count}
+            for group, count in age_groups.items()
+        ]
+
+        # ==================== COMPILE RESPONSE ====================
+        report_data = {
+            'revenue_report': {
+                'total_revenue': float(total_revenue),
+                'monthly_revenue': monthly_revenue,
+                'revenue_by_service': revenue_by_service
+            },
+            'consultation_report': {
+                'total_consultations': total_consultations,
+                'by_status': by_status,
+                'by_doctor': by_doctor,
+                'by_specialization': by_specialization
+            },
+            'appointment_report': {
+                'total_appointments': total_appointments,
+                'by_status': appt_by_status,
+                'by_nurse': by_nurse
+            },
+            'patient_report': {
+                'total_patients': total_patients,
+                'new_patients_monthly': new_patients_monthly,
+                'by_age_group': by_age_group
+            }
+        }
+
+        return Response(report_data, status=status.HTTP_200_OK)
