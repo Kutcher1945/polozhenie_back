@@ -1246,17 +1246,21 @@ class StaffViewSet(ViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        # Collect all validation errors
+        validation_errors = []
+
         # Check if email already exists
         if User.objects.filter(email=email).exists():
-            return Response(
-                {'error': 'Пользователь с таким email уже существует'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            validation_errors.append('Пользователь с таким email уже существует')
 
         # Check if phone already exists
         if phone and User.objects.filter(phone=phone).exists():
+            validation_errors.append('Пользователь с таким телефоном уже существует')
+
+        # Return all validation errors together
+        if validation_errors:
             return Response(
-                {'error': 'Пользователь с таким телефоном уже существует'},
+                {'error': '. '.join(validation_errors)},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
