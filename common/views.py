@@ -12,9 +12,13 @@ from rest_framework import status
 from drf_yasg.utils import swagger_auto_schema
 from django.db.models import Q
 from django.contrib.auth.hashers import make_password
-from .models import User, DoctorSpecialization, NurseSpecialization
+from .models import User, DoctorSpecialization, NurseSpecialization, UserSession
 from rest_framework.authtoken.models import Token
-from .serializers import UserSerializer, UserProfileSerializer
+from rest_framework_simplejwt.tokens import RefreshToken
+from .serializers import (
+    UserSerializer, UserProfileSerializer, UserSessionSerializer,
+    create_jwt_tokens_for_user, refresh_jwt_tokens
+)
 from .permissions import IsDoctor, IsAdmin, IsNurse
 from .utils.email_utils import send_password_reset_email
 from django.views.decorators.csrf import ensure_csrf_cookie
@@ -35,7 +39,7 @@ class UserViewSet(ModelViewSet):
         """
         Override permissions per action
         """
-        if self.action in ['register', 'login', 'forgot_password', 'verify_reset_code', 'reset_password', 'get_available_doctors', 'get_profile_choices']:
+        if self.action in ['register', 'login', 'logout', 'forgot_password', 'verify_reset_code', 'reset_password', 'get_available_doctors', 'get_profile_choices']:
             # Public endpoints - no authentication required
             return []
         else:
@@ -136,23 +140,38 @@ class UserViewSet(ModelViewSet):
         )
 
     @swagger_auto_schema(
-        operation_description="User login",
+        operation_description="User login with JWT tokens",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             properties={
                 "email": openapi.Schema(type=openapi.TYPE_STRING, description="User's email"),
                 "password": openapi.Schema(type=openapi.TYPE_STRING, description="User's password"),
+                "device_name": openapi.Schema(type=openapi.TYPE_STRING, description="Optional device name"),
             },
             required=["email", "password"],
         ),
-        responses={200: "Login successful!", 401: "Invalid credentials", 403: "Account is inactive"},
+        responses={
+            200: openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    "message": openapi.Schema(type=openapi.TYPE_STRING),
+                    "access_token": openapi.Schema(type=openapi.TYPE_STRING),
+                    "refresh_token": openapi.Schema(type=openapi.TYPE_STRING),
+                    "user": openapi.Schema(type=openapi.TYPE_OBJECT),
+                    "session_id": openapi.Schema(type=openapi.TYPE_INTEGER),
+                }
+            ),
+            401: "Invalid credentials",
+            403: "Account is inactive"
+        },
     )
     @action(detail=False, methods=["post"], url_path="login")
     def login(self, request):
-        """Handles user login using email and password."""
+        """Handles user login using email and password with JWT tokens."""
 
         email = request.data.get("email", "").strip()
         password = request.data.get("password")
+        device_name = request.data.get("device_name", "")
 
         print("🔹 Login attempt for email:", email)
 
@@ -167,9 +186,8 @@ class UserViewSet(ModelViewSet):
         if not user.is_active:
             return Response({"error": "Account is inactive. Please contact support."}, status=status.HTTP_403_FORBIDDEN)
 
-        # ✅ Remove existing tokens and generate a new one
-        Token.objects.filter(user=user).delete()
-        token = Token.objects.create(user=user)
+        # Create JWT tokens and session
+        tokens = create_jwt_tokens_for_user(user, request, device_name)
 
         # Use UserProfileSerializer to include all profile fields
         user_serializer = UserProfileSerializer(user)
@@ -178,11 +196,44 @@ class UserViewSet(ModelViewSet):
             {
                 "message": "Login successful!",
                 "user": user_serializer.data,
-                "access_token": token.key,   # ✅ renamed for frontend
-                "refresh_token": token.key,  # ❗ you can later change this to separate value
+                "access_token": tokens['access_token'],
+                "refresh_token": tokens['refresh_token'],
+                "session_id": tokens['session_id'],
             },
             status=status.HTTP_200_OK,
         )
+
+    @swagger_auto_schema(
+        operation_description="Logout and revoke current session",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                "refresh_token": openapi.Schema(type=openapi.TYPE_STRING, description="Refresh token to revoke"),
+            },
+        ),
+        responses={200: "Logged out successfully"},
+    )
+    @action(detail=False, methods=["post"], url_path="logout")
+    def logout(self, request):
+        """Logout and revoke the current session."""
+        try:
+            refresh_token = request.data.get("refresh_token")
+            if refresh_token:
+                token = RefreshToken(refresh_token)
+                jti = str(token['jti'])
+
+                # Revoke the session
+                UserSession.objects.filter(
+                    refresh_token_jti=jti
+                ).update(is_revoked=True, revoked_at=timezone.now())
+
+                # Blacklist the token
+                token.blacklist()
+
+            return Response({"message": "Logged out successfully"}, status=status.HTTP_200_OK)
+        except Exception as e:
+            logger.warning(f"Logout error: {e}")
+            return Response({"message": "Logged out"}, status=status.HTTP_200_OK)
 
     @swagger_auto_schema(
     operation_description="Send password reset link or code to user's email",
@@ -809,7 +860,7 @@ class UserProfileViewSet(ViewSet):
         
     @swagger_auto_schema(
         method="post",
-        operation_description="Refresh access token",
+        operation_description="Refresh JWT access token",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             properties={
@@ -817,27 +868,32 @@ class UserProfileViewSet(ViewSet):
             },
             required=["refresh_token"],
         ),
-        responses={200: "New token returned", 401: "Invalid refresh token"},
+        responses={
+            200: openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    "access_token": openapi.Schema(type=openapi.TYPE_STRING),
+                    "refresh_token": openapi.Schema(type=openapi.TYPE_STRING),
+                }
+            ),
+            401: "Invalid refresh token"
+        },
     )
     @action(detail=False, methods=["post"], url_path="auth/refresh", url_name="refresh")
     def refresh_token(self, request):
-        refresh_token = request.data.get("refresh_token")
+        """Refresh JWT tokens using refresh token."""
+        refresh_token_str = request.data.get("refresh_token")
 
-        if not refresh_token:
+        if not refresh_token_str:
             return Response({"error": "Refresh token is required"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            token_obj = Token.objects.get(key=refresh_token)
-        except Token.DoesNotExist:
+            # Use the JWT refresh function
+            tokens = refresh_jwt_tokens(refresh_token_str)
+            return Response(tokens, status=status.HTTP_200_OK)
+        except Exception as e:
+            logger.warning(f"Token refresh failed: {e}")
             return Response({"error": "Invalid or expired refresh token"}, status=status.HTTP_401_UNAUTHORIZED)
-
-        # Удаляем старый токен и создаем новый
-        token_obj.delete()
-        new_token = Token.objects.create(user=token_obj.user)
-
-        return Response({
-            "access_token": new_token.key,
-        }, status=status.HTTP_200_OK)
 
 
     @swagger_auto_schema(
@@ -1585,3 +1641,119 @@ class PatientsViewSet(ViewSet):
                 {'error': 'Не удалось создать пациента', 'details': str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+class SessionViewSet(ViewSet):
+    """
+    ViewSet for managing user sessions.
+    Allows users to view and revoke their active sessions across devices.
+    """
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_description="Get all active sessions for the current user",
+        responses={200: UserSessionSerializer(many=True)},
+    )
+    def list(self, request):
+        """List all active sessions for the current user."""
+        sessions = UserSession.objects.filter(
+            user=request.user,
+            is_revoked=False,
+            is_deleted=False
+        ).order_by('-last_activity')
+
+        # Get current session JTI from access token
+        current_session_jti = self._get_current_session_jti(request)
+
+        session_data = []
+        for session in sessions:
+            data = UserSessionSerializer(session).data
+            data['is_current'] = session.refresh_token_jti == current_session_jti
+            session_data.append(data)
+
+        return Response(session_data, status=status.HTTP_200_OK)
+
+    @swagger_auto_schema(
+        operation_description="Revoke a specific session",
+        responses={
+            200: "Session revoked successfully",
+            403: "Cannot revoke current session through this endpoint",
+            404: "Session not found",
+        },
+    )
+    @action(detail=True, methods=["post"], url_path="revoke")
+    def revoke(self, request, pk=None):
+        """Revoke a specific session."""
+        try:
+            session = UserSession.objects.get(
+                id=pk,
+                user=request.user,
+                is_revoked=False,
+                is_deleted=False
+            )
+
+            # Prevent revoking current session
+            current_session_jti = self._get_current_session_jti(request)
+            if session.refresh_token_jti == current_session_jti:
+                return Response(
+                    {"error": "Cannot revoke current session. Use logout instead."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+            # Revoke the session
+            session.revoke()
+
+            # Try to blacklist the token
+            try:
+                token = RefreshToken(session.refresh_token_jti)
+                token.blacklist()
+            except Exception:
+                pass  # Token may already be blacklisted or invalid
+
+            return Response({"message": "Session revoked successfully"}, status=status.HTTP_200_OK)
+
+        except UserSession.DoesNotExist:
+            return Response({"error": "Session not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    @swagger_auto_schema(
+        operation_description="Revoke all sessions except current",
+        responses={200: "All other sessions revoked"},
+    )
+    @action(detail=False, methods=["post"], url_path="revoke-all-others")
+    def revoke_all_others(self, request):
+        """Revoke all sessions except the current one."""
+        current_session_jti = self._get_current_session_jti(request)
+
+        # Get all other sessions
+        other_sessions = UserSession.objects.filter(
+            user=request.user,
+            is_revoked=False,
+            is_deleted=False
+        ).exclude(
+            refresh_token_jti=current_session_jti
+        )
+
+        revoked_count = other_sessions.count()
+
+        # Revoke all other sessions
+        other_sessions.update(
+            is_revoked=True,
+            revoked_at=timezone.now()
+        )
+
+        return Response({
+            "message": f"Revoked {revoked_count} sessions",
+            "revoked_count": revoked_count
+        }, status=status.HTTP_200_OK)
+
+    def _get_current_session_jti(self, request):
+        """Extract session JTI from current access token."""
+        auth_header = request.META.get('HTTP_AUTHORIZATION', '')
+        if auth_header.startswith('Bearer '):
+            try:
+                from rest_framework_simplejwt.tokens import AccessToken
+                token = AccessToken(auth_header.split(' ')[1])
+                return token.get('session_jti')
+            except Exception:
+                pass
+        return None

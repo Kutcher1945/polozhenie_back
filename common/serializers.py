@@ -1,5 +1,7 @@
 from rest_framework import serializers
-from .models import User
+from rest_framework_simplejwt.tokens import RefreshToken
+from django.utils import timezone
+from .models import User, UserSession
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -181,3 +183,137 @@ class UserProfileSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Гражданство должно содержать минимум 2 символа.")
         return value.strip() if value else value
 
+
+class UserSessionSerializer(serializers.ModelSerializer):
+    """Serializer for user sessions."""
+
+    class Meta:
+        model = UserSession
+        fields = [
+            'id',
+            'device_name',
+            'device_type',
+            'ip_address',
+            'last_activity',
+            'created_at',
+        ]
+        read_only_fields = fields
+
+
+def get_client_ip(request):
+    """Extract client IP from request."""
+    if request is None:
+        return None
+    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+    if x_forwarded_for:
+        return x_forwarded_for.split(',')[0].strip()
+    return request.META.get('REMOTE_ADDR')
+
+
+def parse_device_info(user_agent_string):
+    """Parse user agent string to determine device type and name."""
+    try:
+        from user_agents import parse
+        user_agent = parse(user_agent_string)
+
+        # Determine device type
+        if user_agent.is_mobile:
+            device_type = 'mobile'
+        elif user_agent.is_tablet:
+            device_type = 'tablet'
+        elif user_agent.is_pc:
+            device_type = 'desktop'
+        else:
+            device_type = 'unknown'
+
+        # Generate device name
+        device_name = f"{user_agent.browser.family} on {user_agent.os.family}"
+
+        return device_type, device_name
+    except Exception:
+        return 'unknown', 'Unknown Device'
+
+
+def create_jwt_tokens_for_user(user, request=None, device_name=None):
+    """
+    Create JWT tokens for a user and register the session.
+    Returns dict with access_token, refresh_token, and session_id.
+    """
+    # Parse device information
+    user_agent_string = ''
+    if request:
+        user_agent_string = request.META.get('HTTP_USER_AGENT', '')
+
+    device_type, auto_device_name = parse_device_info(user_agent_string)
+
+    # Use provided device name or auto-detected one
+    final_device_name = device_name if device_name else auto_device_name
+
+    # Get IP address
+    ip_address = get_client_ip(request)
+
+    # Generate refresh token
+    refresh = RefreshToken.for_user(user)
+    refresh_jti = str(refresh['jti'])
+
+    # Create session record
+    session = UserSession.objects.create(
+        user=user,
+        refresh_token_jti=refresh_jti,
+        device_name=final_device_name,
+        device_type=device_type,
+        user_agent=user_agent_string,
+        ip_address=ip_address,
+    )
+
+    # Add session JTI to access token for validation
+    access = refresh.access_token
+    access['session_jti'] = refresh_jti
+
+    return {
+        'access_token': str(access),
+        'refresh_token': str(refresh),
+        'session_id': session.id,
+    }
+
+
+def refresh_jwt_tokens(refresh_token_string):
+    """
+    Refresh JWT tokens using a refresh token.
+    Validates session and rotates tokens.
+    Returns dict with access_token and refresh_token.
+    """
+    # Decode the refresh token
+    old_refresh = RefreshToken(refresh_token_string)
+    old_jti = str(old_refresh['jti'])
+
+    # Validate session exists and is not revoked
+    try:
+        session = UserSession.objects.get(
+            refresh_token_jti=old_jti,
+            is_revoked=False,
+            is_deleted=False
+        )
+    except UserSession.DoesNotExist:
+        raise serializers.ValidationError('Session not found or has been revoked')
+
+    # Blacklist old refresh token
+    old_refresh.blacklist()
+
+    # Create new tokens
+    new_refresh = RefreshToken.for_user(session.user)
+    new_jti = str(new_refresh['jti'])
+
+    # Update session with new JTI
+    session.refresh_token_jti = new_jti
+    session.last_activity = timezone.now()
+    session.save(update_fields=['refresh_token_jti', 'last_activity', 'updated_at'])
+
+    # Add session JTI to access token
+    new_access = new_refresh.access_token
+    new_access['session_jti'] = new_jti
+
+    return {
+        'access_token': str(new_access),
+        'refresh_token': str(new_refresh),
+    }

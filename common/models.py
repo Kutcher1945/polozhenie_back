@@ -325,6 +325,91 @@ class NurseProfile(BaseModel):
         verbose_name_plural = "Профили медсестёр"
 
 
+class UserSession(BaseModel):
+    """
+    Tracks individual user sessions across devices.
+    Each session has its own refresh token for multi-device support.
+    """
+    DEVICE_TYPE_CHOICES = [
+        ('desktop', 'Desktop'),
+        ('mobile', 'Mobile'),
+        ('tablet', 'Tablet'),
+        ('unknown', 'Unknown'),
+    ]
+
+    user = models.ForeignKey(
+        'User',
+        on_delete=models.CASCADE,
+        related_name='sessions',
+        verbose_name="Пользователь"
+    )
+
+    # JWT Token Identifier
+    refresh_token_jti = models.CharField(
+        max_length=255,
+        unique=True,
+        db_index=True,
+        verbose_name="Refresh Token JTI"
+    )
+
+    # Device Information
+    device_name = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        verbose_name="Название устройства"
+    )
+    device_type = models.CharField(
+        max_length=50,
+        choices=DEVICE_TYPE_CHOICES,
+        default='unknown',
+        verbose_name="Тип устройства"
+    )
+    user_agent = models.TextField(
+        null=True,
+        blank=True,
+        verbose_name="User Agent"
+    )
+    ip_address = models.GenericIPAddressField(
+        null=True,
+        blank=True,
+        verbose_name="IP адрес"
+    )
+
+    # Session Metadata
+    last_activity = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Последняя активность"
+    )
+
+    # Revocation
+    is_revoked = models.BooleanField(
+        default=False,
+        verbose_name="Отозвана"
+    )
+    revoked_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Дата отзыва"
+    )
+
+    class Meta:
+        db_table = "common_user_sessions"
+        verbose_name = "Сессия пользователя"
+        verbose_name_plural = "Сессии пользователей"
+        ordering = ['-last_activity']
+
+    def __str__(self):
+        return f"{self.user.email} - {self.device_name or 'Unknown Device'}"
+
+    def revoke(self):
+        """Revoke this session."""
+        from django.utils import timezone
+        self.is_revoked = True
+        self.revoked_at = timezone.now()
+        self.save(update_fields=['is_revoked', 'revoked_at'])
+
+
 # CustomToken has been migrated to standard DRF Token (authtoken_token table)
 # Migration completed: 2025-12-05
 # - 52 tokens successfully migrated
