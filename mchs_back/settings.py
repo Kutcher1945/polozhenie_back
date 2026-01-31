@@ -48,7 +48,9 @@ INSTALLED_APPS = [
     "channels",
     "django.contrib.staticfiles",
     "rest_framework",  # Django REST Framework for APIs
-    "rest_framework.authtoken",  # Token-based authentication (optional)
+    "rest_framework.authtoken",  # Token-based authentication (legacy, for migration)
+    "rest_framework_simplejwt",  # JWT authentication
+    "rest_framework_simplejwt.token_blacklist",  # Token blacklist for revocation
     "corsheaders",  # For handling Cross-Origin Resource Sharing (CORS)
     "drf_spectacular",
     # Apps
@@ -114,12 +116,47 @@ SPECTACULAR_SETTINGS = {
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework.authentication.TokenAuthentication',  # ✅ Use standard DRF Token
+        'common.authentication.CustomJWTAuthentication',  # JWT with session validation
+        'rest_framework.authentication.TokenAuthentication',  # Legacy token auth (for migration)
     ),
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     # 'DEFAULT_PERMISSION_CLASSES': (
     #     'rest_framework.permissions.IsAuthenticated',
     # ),
+}
+
+# JWT Configuration
+from datetime import timedelta
+
+SIMPLE_JWT = {
+    # Token Lifetimes
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+
+    # Token Rotation - get new refresh token on each refresh
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
+
+    # Algorithm
+    'ALGORITHM': 'HS256',
+    'SIGNING_KEY': SECRET_KEY,
+
+    # Token Types - support both Bearer and Token for migration
+    'AUTH_HEADER_TYPES': ('Bearer', 'Token'),
+    'AUTH_HEADER_NAME': 'HTTP_AUTHORIZATION',
+
+    # User Identification
+    'USER_ID_FIELD': 'id',
+    'USER_ID_CLAIM': 'user_id',
+
+    # Token Claims
+    'TOKEN_TYPE_CLAIM': 'token_type',
+    'JTI_CLAIM': 'jti',
+
+    # Sliding tokens disabled (use standard refresh)
+    'SLIDING_TOKEN_REFRESH_EXP_CLAIM': 'refresh_exp',
+    'SLIDING_TOKEN_LIFETIME': timedelta(minutes=15),
+    'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=7),
 }
 
 
@@ -241,6 +278,24 @@ DATABASES = {
         'PORT': '5432',
     }
 }
+
+
+
+# # ssh -L 5433:kz1-a-a0denofiul3t07t0.mdb.yandexcloud.kz:6432 zhancare@94.131.81.77 #Password from ssh is adilan10
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.contrib.gis.db.backends.postgis',
+#         'NAME': 'zhancare_db',
+#         'USER': 'zhancare_admin',
+#         'PASSWORD': '4HPzQt2HyU@',
+#         'HOST': '127.0.0.1',
+#         'PORT': '5433',
+#         'OPTIONS': {
+#             'sslmode': 'require',
+#         },
+#     }
+# }
+
 
 # DATABASES = {
 #     'default': {
