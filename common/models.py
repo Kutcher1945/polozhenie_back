@@ -162,11 +162,15 @@ class User(BaseModel):
 
     # Врачебные поля
     doctor_type = models.CharField(max_length=150, null=True, blank=True, verbose_name="Тип врача")
-    doctor_specialization = models.ForeignKey('DoctorSpecialization', on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Специализация врача")
+    doctor_specialization = models.ForeignKey('DoctorSpecialization', on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Специализация врача (основная)")
+    # ManyToMany for multiple specializations
+    doctor_specializations = models.ManyToManyField('DoctorSpecialization', blank=True, related_name='doctors', verbose_name="Специализации врача")
 
     # Медсестринские поля
     nurse_type = models.CharField(max_length=150, null=True, blank=True, verbose_name="Тип медсестры")
-    nurse_specialization = models.ForeignKey('NurseSpecialization', on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Специализация медсестры")
+    nurse_specialization = models.ForeignKey('NurseSpecialization', on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Специализация медсестры (основная)")
+    # ManyToMany for multiple specializations
+    nurse_specializations = models.ManyToManyField('NurseSpecialization', blank=True, related_name='nurses', verbose_name="Специализации медсестры")
 
     # Клиника (для докторов и медсестер)
     clinic = models.ForeignKey(
