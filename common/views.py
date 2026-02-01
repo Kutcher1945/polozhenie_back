@@ -1179,11 +1179,20 @@ class StaffViewSet(ViewSet):
         # Serialize staff data
         staff_data = []
         for member in staff:
+            # Get all specializations as comma-separated string
             specialization = None
-            if member.role == 'doctor' and member.doctor_specialization:
-                specialization = member.doctor_specialization.name_ru
-            elif member.role == 'nurse' and member.nurse_specialization:
-                specialization = member.nurse_specialization.name_ru
+            if member.role == 'doctor':
+                specs = list(member.doctor_specializations.values_list('name_ru', flat=True))
+                if specs:
+                    specialization = ', '.join(specs)
+                elif member.doctor_specialization:
+                    specialization = member.doctor_specialization.name_ru
+            elif member.role == 'nurse':
+                specs = list(member.nurse_specializations.values_list('name_ru', flat=True))
+                if specs:
+                    specialization = ', '.join(specs)
+                elif member.nurse_specialization:
+                    specialization = member.nurse_specialization.name_ru
 
             staff_data.append({
                 'id': member.id,
@@ -1304,28 +1313,68 @@ class StaffViewSet(ViewSet):
             new_staff.set_password(password)
             new_staff.save()
 
-            # Handle specialization (create as simple text for now)
+            # Handle specializations (supports comma-separated multiple specializations)
             if specialization:
+                # Split by comma and strip whitespace
+                spec_names = [s.strip() for s in specialization.split(',') if s.strip()]
+
                 if role == 'doctor':
-                    # Try to find or create specialization
-                    spec, created = DoctorSpecialization.objects.get_or_create(
-                        name_ru=specialization,
-                        defaults={
-                            'name_kz': specialization,
-                            'name_en': specialization
-                        }
-                    )
-                    new_staff.doctor_specialization = spec
+                    specs = []
+                    for spec_name in spec_names:
+                        # Try to find existing specialization by name_ru
+                        spec = DoctorSpecialization.objects.filter(name_ru=spec_name).first()
+                        if not spec:
+                            # Create new specialization with unique names
+                            try:
+                                spec = DoctorSpecialization.objects.create(
+                                    name_ru=spec_name,
+                                    name_kz=f"{spec_name} (KZ)",
+                                    name_en=f"{spec_name} (EN)"
+                                )
+                            except Exception:
+                                # If creation fails, try to find by any name field
+                                spec = DoctorSpecialization.objects.filter(
+                                    models.Q(name_ru=spec_name) |
+                                    models.Q(name_kz=spec_name) |
+                                    models.Q(name_en=spec_name)
+                                ).first()
+                        if spec:
+                            specs.append(spec)
+
+                    # Set primary specialization (first one) for backwards compatibility
+                    new_staff.doctor_specialization = specs[0] if specs else None
+                    new_staff.save()
+                    # Set all specializations in ManyToMany field
+                    new_staff.doctor_specializations.set(specs)
+
                 elif role == 'nurse':
-                    spec, created = NurseSpecialization.objects.get_or_create(
-                        name_ru=specialization,
-                        defaults={
-                            'name_kz': specialization,
-                            'name_en': specialization
-                        }
-                    )
-                    new_staff.nurse_specialization = spec
-                new_staff.save()
+                    specs = []
+                    for spec_name in spec_names:
+                        # Try to find existing specialization by name_ru
+                        spec = NurseSpecialization.objects.filter(name_ru=spec_name).first()
+                        if not spec:
+                            # Create new specialization with unique names
+                            try:
+                                spec = NurseSpecialization.objects.create(
+                                    name_ru=spec_name,
+                                    name_kz=f"{spec_name} (KZ)",
+                                    name_en=f"{spec_name} (EN)"
+                                )
+                            except Exception:
+                                # If creation fails, try to find by any name field
+                                spec = NurseSpecialization.objects.filter(
+                                    models.Q(name_ru=spec_name) |
+                                    models.Q(name_kz=spec_name) |
+                                    models.Q(name_en=spec_name)
+                                ).first()
+                        if spec:
+                            specs.append(spec)
+
+                    # Set primary specialization (first one) for backwards compatibility
+                    new_staff.nurse_specialization = specs[0] if specs else None
+                    new_staff.save()
+                    # Set all specializations in ManyToMany field
+                    new_staff.nurse_specializations.set(specs)
 
             # Return created staff member data
             return Response({
@@ -1417,25 +1466,76 @@ class StaffViewSet(ViewSet):
                     )
                 staff_member.set_password(password)
 
-            # Update specialization if provided
+            # Update specializations if provided (supports comma-separated multiple specializations)
             if 'specialization' in request.data:
-                specialization_name = request.data['specialization']
-                if specialization_name:
-                    from questionnaire.models import DoctorSpecialization, NurseSpecialization
+                specialization_input = request.data['specialization']
+                if specialization_input:
+                    # Split by comma and strip whitespace
+                    spec_names = [s.strip() for s in specialization_input.split(',') if s.strip()]
+
                     if staff_member.role == 'doctor':
-                        spec, _ = DoctorSpecialization.objects.get_or_create(
-                            name_ru=specialization_name,
-                            defaults={'name_kz': specialization_name, 'name_en': specialization_name}
-                        )
-                        staff_member.doctor_specialization = spec
+                        specs = []
+                        for spec_name in spec_names:
+                            # Try to find existing specialization by name_ru
+                            spec = DoctorSpecialization.objects.filter(name_ru=spec_name).first()
+                            if not spec:
+                                # Create new specialization with unique names
+                                try:
+                                    spec = DoctorSpecialization.objects.create(
+                                        name_ru=spec_name,
+                                        name_kz=f"{spec_name} (KZ)",
+                                        name_en=f"{spec_name} (EN)"
+                                    )
+                                except Exception:
+                                    # If creation fails, try to find by any name field
+                                    spec = DoctorSpecialization.objects.filter(
+                                        models.Q(name_ru=spec_name) |
+                                        models.Q(name_kz=spec_name) |
+                                        models.Q(name_en=spec_name)
+                                    ).first()
+                            if spec:
+                                specs.append(spec)
+
+                        # Set primary specialization (first one) for backwards compatibility
+                        staff_member.doctor_specialization = specs[0] if specs else None
                         staff_member.nurse_specialization = None
+                        # Save first to get ID for ManyToMany
+                        staff_member.save()
+                        # Set all specializations in ManyToMany field
+                        staff_member.doctor_specializations.set(specs)
+                        staff_member.nurse_specializations.clear()
+
                     elif staff_member.role == 'nurse':
-                        spec, _ = NurseSpecialization.objects.get_or_create(
-                            name_ru=specialization_name,
-                            defaults={'name_kz': specialization_name, 'name_en': specialization_name}
-                        )
-                        staff_member.nurse_specialization = spec
+                        specs = []
+                        for spec_name in spec_names:
+                            # Try to find existing specialization by name_ru
+                            spec = NurseSpecialization.objects.filter(name_ru=spec_name).first()
+                            if not spec:
+                                # Create new specialization with unique names
+                                try:
+                                    spec = NurseSpecialization.objects.create(
+                                        name_ru=spec_name,
+                                        name_kz=f"{spec_name} (KZ)",
+                                        name_en=f"{spec_name} (EN)"
+                                    )
+                                except Exception:
+                                    # If creation fails, try to find by any name field
+                                    spec = NurseSpecialization.objects.filter(
+                                        models.Q(name_ru=spec_name) |
+                                        models.Q(name_kz=spec_name) |
+                                        models.Q(name_en=spec_name)
+                                    ).first()
+                            if spec:
+                                specs.append(spec)
+
+                        # Set primary specialization (first one) for backwards compatibility
+                        staff_member.nurse_specialization = specs[0] if specs else None
                         staff_member.doctor_specialization = None
+                        # Save first to get ID for ManyToMany
+                        staff_member.save()
+                        # Set all specializations in ManyToMany field
+                        staff_member.nurse_specializations.set(specs)
+                        staff_member.doctor_specializations.clear()
 
             # Update availability_status if provided
             if 'availability_status' in request.data:
@@ -1461,12 +1561,20 @@ class StaffViewSet(ViewSet):
 
             staff_member.save()
 
-            # Get updated specialization for response
+            # Get updated specializations for response (as comma-separated string)
             specialization = None
-            if staff_member.role == 'doctor' and staff_member.doctor_specialization:
-                specialization = staff_member.doctor_specialization.name_ru
-            elif staff_member.role == 'nurse' and staff_member.nurse_specialization:
-                specialization = staff_member.nurse_specialization.name_ru
+            if staff_member.role == 'doctor':
+                specs = list(staff_member.doctor_specializations.values_list('name_ru', flat=True))
+                if specs:
+                    specialization = ', '.join(specs)
+                elif staff_member.doctor_specialization:
+                    specialization = staff_member.doctor_specialization.name_ru
+            elif staff_member.role == 'nurse':
+                specs = list(staff_member.nurse_specializations.values_list('name_ru', flat=True))
+                if specs:
+                    specialization = ', '.join(specs)
+                elif staff_member.nurse_specialization:
+                    specialization = staff_member.nurse_specialization.name_ru
 
             # Return updated staff member data
             return Response({
