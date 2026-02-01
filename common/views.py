@@ -1354,7 +1354,7 @@ class StaffViewSet(ViewSet):
     def partial_update(self, request, pk=None):
         """
         PATCH /api/v1/staff/{id}/
-        Update staff member (e.g., toggle active status)
+        Update staff member details
         """
         # Check if user is admin
         if request.user.role != 'admin':
@@ -1368,24 +1368,100 @@ class StaffViewSet(ViewSet):
             staff_member = User.objects.get(id=pk, role__in=['doctor', 'nurse'], is_deleted=False)
 
             # Check if admin has permission to update this staff member
-            clinic_id = request.user.clinic_id if hasattr(request.user, 'clinic_id') else None
-            if clinic_id and staff_member.clinic_id != clinic_id:
+            admin_clinic_id = request.user.clinic_id if hasattr(request.user, 'clinic_id') else None
+            if admin_clinic_id and staff_member.clinic_id != admin_clinic_id:
                 return Response(
                     {'error': 'У вас нет прав для изменения этого сотрудника'},
                     status=status.HTTP_403_FORBIDDEN
                 )
 
-            # Update availability_status field if provided
+            # Validate email uniqueness if email is being changed
+            new_email = request.data.get('email')
+            if new_email and new_email != staff_member.email:
+                if User.objects.filter(email=new_email).exclude(id=pk).exists():
+                    return Response(
+                        {'error': 'Пользователь с таким email уже существует'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+            # Validate phone uniqueness if phone is being changed
+            new_phone = request.data.get('phone')
+            if new_phone and new_phone != staff_member.phone:
+                if User.objects.filter(phone=new_phone).exclude(id=pk).exists():
+                    return Response(
+                        {'error': 'Пользователь с таким телефоном уже существует'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+            # Update basic fields if provided
+            if 'first_name' in request.data:
+                staff_member.first_name = request.data['first_name']
+            if 'last_name' in request.data:
+                staff_member.last_name = request.data['last_name']
+            if 'email' in request.data:
+                staff_member.email = request.data['email']
+            if 'phone' in request.data:
+                staff_member.phone = request.data['phone']
+
+            # Update role if provided (doctor/nurse)
+            if 'role' in request.data and request.data['role'] in ['doctor', 'nurse']:
+                staff_member.role = request.data['role']
+
+            # Update password if provided
+            if 'password' in request.data and request.data['password']:
+                password = request.data['password']
+                if len(password) < 8:
+                    return Response(
+                        {'error': 'Пароль должен содержать минимум 8 символов'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                staff_member.set_password(password)
+
+            # Update specialization if provided
+            if 'specialization' in request.data:
+                specialization_name = request.data['specialization']
+                if specialization_name:
+                    from questionnaire.models import DoctorSpecialization, NurseSpecialization
+                    if staff_member.role == 'doctor':
+                        spec, _ = DoctorSpecialization.objects.get_or_create(
+                            name_ru=specialization_name,
+                            defaults={'name_kz': specialization_name, 'name_en': specialization_name}
+                        )
+                        staff_member.doctor_specialization = spec
+                        staff_member.nurse_specialization = None
+                    elif staff_member.role == 'nurse':
+                        spec, _ = NurseSpecialization.objects.get_or_create(
+                            name_ru=specialization_name,
+                            defaults={'name_kz': specialization_name, 'name_en': specialization_name}
+                        )
+                        staff_member.nurse_specialization = spec
+                        staff_member.doctor_specialization = None
+
+            # Update availability_status if provided
             if 'availability_status' in request.data:
                 staff_member.availability_status = request.data['availability_status']
-                staff_member.save()
 
-            # Update is_active field if provided (for backward compatibility)
+            # Update is_active if provided (for backward compatibility)
             if 'is_active' in request.data:
                 staff_member.is_active = request.data['is_active']
-                staff_member.save()
 
-            # Get updated specialization
+            # Update clinic if provided (only for global admins)
+            if 'clinic_id' in request.data and not admin_clinic_id:
+                clinic_id = request.data['clinic_id']
+                if clinic_id:
+                    from clinics.models import Clinics
+                    try:
+                        clinic = Clinics.objects.get(id=clinic_id)
+                        staff_member.clinic = clinic
+                    except Clinics.DoesNotExist:
+                        return Response(
+                            {'error': 'Клиника не найдена'},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+
+            staff_member.save()
+
+            # Get updated specialization for response
             specialization = None
             if staff_member.role == 'doctor' and staff_member.doctor_specialization:
                 specialization = staff_member.doctor_specialization.name_ru
