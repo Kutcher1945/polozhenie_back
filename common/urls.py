@@ -3,7 +3,7 @@ from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
 from .views import (
     UserViewSet, UserProfileViewSet, StaffViewSet,
-    ClinicsViewSet, PatientsViewSet, SessionViewSet, ReportsViewSet, csrf_cookie_view
+    ClinicsViewSet, PatientsViewSet, SessionViewSet, ReportsViewSet, ScheduleViewSet, csrf_cookie_view
 )
 
 router = DefaultRouter()
@@ -14,6 +14,7 @@ router.register(r'clinics', ClinicsViewSet, basename='clinics')
 router.register(r'patients', PatientsViewSet, basename='patients')
 router.register(r'sessions', SessionViewSet, basename='sessions')
 router.register(r'reports', ReportsViewSet, basename='reports')
+router.register(r'schedule', ScheduleViewSet, basename='schedule')
 
 urlpatterns = [
     path('auth/csrf/', csrf_cookie_view, name='csrf-cookie'),

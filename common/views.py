@@ -2372,3 +2372,250 @@ class ReportsViewSet(ViewSet):
         }
 
         return Response(report_data, status=status.HTTP_200_OK)
+
+
+class ScheduleViewSet(ViewSet):
+    """
+    Unified schedule endpoint — merges Consultations and HomeAppointments
+    GET  /schedule/          → list all schedule events
+    POST /schedule/          → create consultation or appointment
+    PATCH /schedule/{id}/    → update status (id format: "consultation_1" or "appointment_2")
+    """
+    permission_classes = [IsAuthenticated]
+
+    _CONSULT_STATUS_TO_SCHEDULE = {
+        'scheduled': 'scheduled',
+        'pending': 'scheduled',
+        'ongoing': 'in_progress',
+        'completed': 'completed',
+        'cancelled': 'cancelled',
+        'missed': 'cancelled',
+    }
+
+    _SCHEDULE_STATUS_TO_CONSULT = {
+        'scheduled': 'scheduled',
+        'in_progress': 'ongoing',
+        'completed': 'completed',
+        'cancelled': 'cancelled',
+    }
+
+    _APPT_STATUS_TO_SCHEDULE = {
+        'scheduled': 'scheduled',
+        'assigned': 'scheduled',
+        'in_progress': 'in_progress',
+        'completed': 'completed',
+        'cancelled': 'cancelled',
+    }
+
+    def list(self, request):
+        if request.user.role != 'admin':
+            return Response(
+                {'error': 'Only administrators can access this endpoint'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        from consultations.models import Consultation
+        from appointments.models import HomeAppointment
+
+        clinic_id = request.user.clinic_id if hasattr(request.user, 'clinic_id') else None
+
+        # Scheduled consultations (have scheduled_at)
+        consultations = Consultation.objects.filter(
+            scheduled_at__isnull=False,
+            is_deleted=False
+        ).select_related('patient', 'doctor', 'doctor__doctor_specialization', 'timeslot')
+
+        if clinic_id:
+            consultations = consultations.filter(doctor__clinic_id=clinic_id)
+
+        # Home appointments
+        appointments = HomeAppointment.objects.filter(
+            is_deleted=False
+        ).select_related('patient', 'doctor', 'nurse')
+
+        if clinic_id:
+            appointments = appointments.filter(
+                Q(doctor__clinic_id=clinic_id) | Q(nurse__clinic_id=clinic_id)
+            )
+
+        events = []
+
+        for c in consultations:
+            duration = 30
+            if c.timeslot:
+                duration = int((c.timeslot.end_time - c.timeslot.start_time).total_seconds() / 60)
+
+            specialization = None
+            if c.doctor and hasattr(c.doctor, 'doctor_specialization') and c.doctor.doctor_specialization:
+                specialization = c.doctor.doctor_specialization.name_ru
+
+            events.append({
+                'id': f'consultation_{c.id}',
+                'type': 'consultation',
+                'patient_id': c.patient_id,
+                'patient_name': f"{c.patient.first_name} {c.patient.last_name}",
+                'doctor_id': c.doctor_id,
+                'doctor_name': f"{c.doctor.first_name} {c.doctor.last_name}" if c.doctor else None,
+                'date': c.scheduled_at.strftime('%Y-%m-%d'),
+                'time': c.scheduled_at.strftime('%H:%M'),
+                'duration': duration,
+                'status': self._CONSULT_STATUS_TO_SCHEDULE.get(c.status, 'scheduled'),
+                'specialization': specialization,
+                'notes': c.session_notes,
+            })
+
+        for a in appointments:
+            events.append({
+                'id': f'appointment_{a.id}',
+                'type': 'appointment',
+                'patient_id': a.patient_id,
+                'patient_name': f"{a.patient.first_name} {a.patient.last_name}",
+                'doctor_id': a.doctor_id,
+                'doctor_name': f"{a.doctor.first_name} {a.doctor.last_name}" if a.doctor else None,
+                'nurse_id': a.nurse_id,
+                'nurse_name': f"{a.nurse.first_name} {a.nurse.last_name}" if a.nurse else None,
+                'date': a.appointment_time.strftime('%Y-%m-%d'),
+                'time': a.appointment_time.strftime('%H:%M'),
+                'duration': 60,
+                'status': self._APPT_STATUS_TO_SCHEDULE.get(a.status, 'scheduled'),
+                'location': a.address,
+                'notes': a.notes,
+            })
+
+        events.sort(key=lambda e: (e['date'], e['time']))
+        return Response(events, status=status.HTTP_200_OK)
+
+    def create(self, request):
+        if request.user.role != 'admin':
+            return Response(
+                {'error': 'Only administrators can access this endpoint'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        from consultations.models import Consultation, TimeSlot
+        from appointments.models import HomeAppointment
+        from datetime import datetime, timedelta
+
+        event_type = request.data.get('type')
+        patient_id = request.data.get('patient_id')
+        date_str = request.data.get('date')
+        time_str = request.data.get('time')
+        duration = int(request.data.get('duration', 30))
+        notes = request.data.get('notes', '')
+
+        if not event_type or not patient_id or not date_str or not time_str:
+            return Response(
+                {'error': 'type, patient_id, date, time are required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            patient = User.objects.get(id=patient_id, role='patient')
+        except User.DoesNotExist:
+            return Response({'error': 'Пациент не найден'}, status=status.HTTP_400_BAD_REQUEST)
+
+        start_dt = timezone.make_aware(
+            datetime.strptime(f"{date_str} {time_str}", '%Y-%m-%d %H:%M')
+        )
+
+        if event_type == 'consultation':
+            doctor_id = request.data.get('doctor_id')
+            if not doctor_id:
+                return Response({'error': 'doctor_id is required for consultations'}, status=status.HTTP_400_BAD_REQUEST)
+
+            try:
+                doctor = User.objects.get(id=doctor_id, role='doctor')
+            except User.DoesNotExist:
+                return Response({'error': 'Доктор не найден'}, status=status.HTTP_400_BAD_REQUEST)
+
+            end_dt = start_dt + timedelta(minutes=duration)
+
+            timeslot = TimeSlot.objects.create(
+                doctor=doctor,
+                start_time=start_dt,
+                end_time=end_dt,
+                is_available=False,
+                max_consultations=1,
+                booked_consultations=1,
+            )
+
+            consultation = Consultation.objects.create(
+                patient=patient,
+                doctor=doctor,
+                meeting_id=f"admin-{timezone.now().strftime('%Y%m%d%H%M%S')}-{patient_id}",
+                status='scheduled',
+                is_urgent=False,
+                timeslot=timeslot,
+                scheduled_at=start_dt,
+                session_notes=notes,
+            )
+
+            return Response({'id': f'consultation_{consultation.id}'}, status=status.HTTP_201_CREATED)
+
+        elif event_type == 'appointment':
+            nurse_id = request.data.get('nurse_id')
+            doctor_id = request.data.get('doctor_id')
+            address = request.data.get('address', '')
+
+            if not nurse_id and not doctor_id:
+                return Response(
+                    {'error': 'doctor_id or nurse_id is required for appointments'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            appointment = HomeAppointment.objects.create(
+                patient=patient,
+                doctor_id=doctor_id if doctor_id else None,
+                nurse_id=nurse_id if nurse_id else None,
+                appointment_time=start_dt,
+                address=address,
+                notes=notes,
+                status='scheduled',
+            )
+
+            return Response({'id': f'appointment_{appointment.id}'}, status=status.HTTP_201_CREATED)
+
+        return Response({'error': 'Invalid event type'}, status=status.HTTP_400_BAD_REQUEST)
+
+    def partial_update(self, request, pk=None):
+        if request.user.role != 'admin':
+            return Response(
+                {'error': 'Only administrators can access this endpoint'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        from consultations.models import Consultation
+        from appointments.models import HomeAppointment
+
+        parts = pk.split('_', 1)
+        if len(parts) != 2:
+            return Response({'error': 'Invalid event id format'}, status=status.HTTP_400_BAD_REQUEST)
+
+        event_type, event_id = parts[0], parts[1]
+
+        new_status = request.data.get('status')
+        if not new_status:
+            return Response({'error': 'status is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if event_type == 'consultation':
+            try:
+                consultation = Consultation.objects.get(id=event_id)
+            except Consultation.DoesNotExist:
+                return Response({'error': 'Консультация не найдена'}, status=status.HTTP_404_NOT_FOUND)
+
+            db_status = self._SCHEDULE_STATUS_TO_CONSULT.get(new_status, new_status)
+            consultation.status = db_status
+            consultation.save()
+            return Response({'status': new_status}, status=status.HTTP_200_OK)
+
+        elif event_type == 'appointment':
+            try:
+                appointment = HomeAppointment.objects.get(id=event_id)
+            except HomeAppointment.DoesNotExist:
+                return Response({'error': 'Запись не найдена'}, status=status.HTTP_404_NOT_FOUND)
+
+            appointment.status = new_status
+            appointment.save()
+            return Response({'status': new_status}, status=status.HTTP_200_OK)
+
+        return Response({'error': 'Invalid event type'}, status=status.HTTP_400_BAD_REQUEST)
