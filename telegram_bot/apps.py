@@ -20,36 +20,37 @@ class TelegramBotConfig(AppConfig):
             logger.info("⏭️ Skipping bot startup (pre-reload)")
             return
 
-        # Only start if bot is enabled
-        bot_enabled = os.environ.get('TELEGRAM_BOT_ENABLED', 'true').lower() == 'true'
+        # --- Telegram bot startup commented out temporarily ---
+        # bot_enabled = os.environ.get('TELEGRAM_BOT_ENABLED', 'true').lower() == 'true'
 
-        if not bot_enabled:
-            logger.info("⏸️ Telegram bot disabled (TELEGRAM_BOT_ENABLED=false)")
-            return
+        # if not bot_enabled:
+        #     logger.info("⏸️ Telegram bot disabled (TELEGRAM_BOT_ENABLED=false)")
+        #     return
 
-        # Check if already running
-        if TelegramBotConfig.bot_thread and TelegramBotConfig.bot_thread.is_alive():
-            logger.info("🔄 Bot thread already running, skipping startup")
-            return
+        # # Check if already running
+        # if TelegramBotConfig.bot_thread and TelegramBotConfig.bot_thread.is_alive():
+        #     logger.info("🔄 Bot thread already running, skipping startup")
+        #     return
 
-        logger.info("🤖 Starting Telegram bot...")
+        # logger.info("🤖 Starting Telegram bot...")
 
-        try:
-            from telegram_bot.bot_instance import run_polling
+        # try:
+        #     from telegram_bot.bot_instance import run_polling
 
-            def start_bot():
-                try:
-                    asyncio.run(run_polling())
-                except Exception as e:
-                    logger.error(f"❌ Bot error: {e}")
+        #     def start_bot():
+        #         try:
+        #             asyncio.run(run_polling())
+        #         except Exception as e:
+        #             logger.error(f"❌ Bot error: {e}")
 
-            TelegramBotConfig.bot_thread = threading.Thread(
-                target=start_bot,
-                daemon=True,
-                name="TelegramBotThread"
-            )
-            TelegramBotConfig.bot_thread.start()
-            logger.info("✅ Telegram bot thread started successfully")
+        #     TelegramBotConfig.bot_thread = threading.Thread(
+        #         target=start_bot,
+        #         daemon=True,
+        #         name="TelegramBotThread"
+        #     )
+        #     TelegramBotConfig.bot_thread.start()
+        #     logger.info("✅ Telegram bot thread started successfully")
 
-        except Exception as e:
-            logger.error(f"❌ Failed to start bot: {e}")
+        # except Exception as e:
+        #     logger.error(f"❌ Failed to start bot: {e}")
+        logger.info("⏸️ Telegram bot startup is commented out")
