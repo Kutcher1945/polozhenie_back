@@ -258,15 +258,10 @@ class DoctorProfile(BaseModel):
     specialization = models.ForeignKey(DoctorSpecialization, on_delete=models.SET_NULL, null=True, blank=True)
     years_of_experience = models.PositiveIntegerField(null=True, blank=True, verbose_name="Опыт работы (лет)")
 
-    # Primary clinic - main workplace (optional, can work independently)
-    clinic = models.ForeignKey(
-        'clinics.Clinics',
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='primary_doctors',
-        verbose_name="Основная клиника"
-    )
+    offline_consultation_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Цена офлайн консультации")
+    online_consultation_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Цена онлайн консультации")
+    preferred_consultation_duration = models.PositiveIntegerField(null=True, blank=True, verbose_name="Длительность консультации (мин)")
+    work_schedule = models.JSONField(null=True, blank=True, verbose_name="Расписание работы")
 
     # Additional clinics - can work in multiple locations
     additional_clinics = models.ManyToManyField('clinics.Clinics', blank=True, related_name='doctors', verbose_name="Дополнительные клиники")
@@ -283,7 +278,7 @@ class DoctorProfile(BaseModel):
         return choices.get(self.user.availability_status, 'Неизвестно') if self.user.availability_status else 'Неизвестно'
 
     def __str__(self):
-        clinic_info = f" ({self.clinic.name})" if self.clinic else " (Независимый)"
+        clinic_info = f" ({self.user.clinic.name})" if self.user.clinic else " (Независимый)"
         return f"{self.user.first_name} {self.user.last_name} - {self.specialization.name_ru if self.specialization else 'Без специализации'}{clinic_info}"
 
     class Meta:
@@ -296,15 +291,10 @@ class NurseProfile(BaseModel):
     specialization = models.ForeignKey(NurseSpecialization, on_delete=models.SET_NULL, null=True, blank=True)
     years_of_experience = models.PositiveIntegerField(null=True, blank=True, verbose_name="Опыт работы (лет)")
 
-    # Primary clinic - main workplace (optional, can work independently)
-    clinic = models.ForeignKey(
-        'clinics.Clinics',
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='primary_nurses',
-        verbose_name="Основная клиника"
-    )
+    offline_consultation_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Цена офлайн консультации")
+    online_consultation_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Цена онлайн консультации")
+    preferred_consultation_duration = models.PositiveIntegerField(null=True, blank=True, verbose_name="Длительность консультации (мин)")
+    work_schedule = models.JSONField(null=True, blank=True, verbose_name="Расписание работы")
 
     # Additional clinics - can work in multiple locations
     additional_clinics = models.ManyToManyField('clinics.Clinics', blank=True, related_name='nurses', verbose_name="Дополнительные клиники")
@@ -321,7 +311,7 @@ class NurseProfile(BaseModel):
         return choices.get(self.user.availability_status, 'Неизвестно') if self.user.availability_status else 'Неизвестно'
 
     def __str__(self):
-        clinic_info = f" ({self.clinic.name})" if self.clinic else " (Независимая)"
+        clinic_info = f" ({self.user.clinic.name})" if self.user.clinic else " (Независимая)"
         return f"{self.user.first_name} {self.user.last_name} - {self.specialization.name_ru if self.specialization else 'Без специализации'}{clinic_info}"
 
     class Meta:

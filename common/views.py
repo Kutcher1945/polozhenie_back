@@ -12,7 +12,7 @@ from rest_framework import status
 from drf_yasg.utils import swagger_auto_schema
 from django.db.models import Q
 from django.contrib.auth.hashers import make_password
-from .models import User, DoctorSpecialization, NurseSpecialization, UserSession
+from .models import User, DoctorSpecialization, NurseSpecialization, DoctorProfile, NurseProfile, UserSession
 from rest_framework.authtoken.models import Token
 from rest_framework_simplejwt.tokens import RefreshToken
 from .serializers import (
@@ -1161,20 +1161,18 @@ class StaffViewSet(ViewSet):
         # Get clinic_id if admin is clinic-specific
         clinic_id = request.user.clinic_id if hasattr(request.user, 'clinic_id') else None
 
+        # show_deleted=true returns only soft-deleted staff, otherwise only active
+        show_deleted = request.query_params.get('show_deleted', 'false').lower() == 'true'
+
         # Build query
+        base_filters = {
+            'role__in': ['doctor', 'nurse'],
+            'is_deleted': show_deleted,
+        }
         if clinic_id:
-            # Clinic admin sees only their clinic's staff (both active and inactive)
-            staff = User.objects.filter(
-                role__in=['doctor', 'nurse'],
-                clinic_id=clinic_id,
-                is_deleted=False
-            )
-        else:
-            # Super admin sees all staff (both active and inactive)
-            staff = User.objects.filter(
-                role__in=['doctor', 'nurse'],
-                is_deleted=False
-            )
+            base_filters['clinic_id'] = clinic_id
+
+        staff = User.objects.filter(**base_filters)
 
         # Serialize staff data
         staff_data = []
@@ -1194,6 +1192,13 @@ class StaffViewSet(ViewSet):
                 elif member.nurse_specialization:
                     specialization = member.nurse_specialization.name_ru
 
+            # Get profile fields
+            profile = None
+            if member.role == 'doctor' and hasattr(member, 'doctor_profile'):
+                profile = member.doctor_profile
+            elif member.role == 'nurse' and hasattr(member, 'nurse_profile'):
+                profile = member.nurse_profile
+
             staff_data.append({
                 'id': member.id,
                 'first_name': member.first_name,
@@ -1202,7 +1207,18 @@ class StaffViewSet(ViewSet):
                 'phone': member.phone,
                 'role': member.role,
                 'specialization': specialization,
+                'gender': member.gender,
+                'birth_date': member.birth_date.isoformat() if member.birth_date else None,
+                'address': member.address,
+                'city': member.city,
+                'language': member.language,
+                'years_of_experience': profile.years_of_experience if profile else None,
+                'offline_consultation_price': str(profile.offline_consultation_price) if profile and profile.offline_consultation_price is not None else None,
+                'online_consultation_price': str(profile.online_consultation_price) if profile and profile.online_consultation_price is not None else None,
+                'preferred_consultation_duration': profile.preferred_consultation_duration if profile else None,
+                'work_schedule': profile.work_schedule if profile else None,
                 'is_active': member.is_active,
+                'is_deleted': member.is_deleted,
                 'availability_status': member.availability_status,
                 'created_at': member.created_at.isoformat() if member.created_at else None,
                 'clinic': {
@@ -1230,9 +1246,23 @@ class StaffViewSet(ViewSet):
         last_name = request.data.get('last_name')
         email = request.data.get('email')
         phone = request.data.get('phone')
+        if phone:
+            phone = '+' + ''.join(c for c in phone if c.isdigit())
         password = request.data.get('password')
         role = request.data.get('role')  # 'doctor' or 'nurse'
         specialization = request.data.get('specialization', '')
+
+        # Additional optional fields
+        gender = request.data.get('gender')
+        birth_date = request.data.get('birth_date')
+        address = request.data.get('address')
+        city = request.data.get('city')
+        language = request.data.get('language')
+        years_of_experience = request.data.get('years_of_experience')
+        offline_consultation_price = request.data.get('offline_consultation_price')
+        online_consultation_price = request.data.get('online_consultation_price')
+        preferred_consultation_duration = request.data.get('preferred_consultation_duration')
+        work_schedule = request.data.get('work_schedule')
 
         # Validate required fields
         if not all([first_name, last_name, email, phone, password, role]):
@@ -1304,6 +1334,11 @@ class StaffViewSet(ViewSet):
                 email=email,
                 phone=phone,
                 role=role,
+                gender=gender if gender else None,
+                birth_date=birth_date if birth_date else None,
+                address=address if address else None,
+                city=city if city else None,
+                language=language if language else 'ru',
                 is_active=True,
                 is_deleted=False,
                 clinic=clinic
@@ -1376,6 +1411,26 @@ class StaffViewSet(ViewSet):
                     # Set all specializations in ManyToMany field
                     new_staff.nurse_specializations.set(specs)
 
+            # Create doctor/nurse profile
+            profile_defaults = {
+                'years_of_experience': int(years_of_experience) if years_of_experience else None,
+                'offline_consultation_price': offline_consultation_price if offline_consultation_price else None,
+                'online_consultation_price': online_consultation_price if online_consultation_price else None,
+                'preferred_consultation_duration': int(preferred_consultation_duration) if preferred_consultation_duration else None,
+                'work_schedule': work_schedule if work_schedule else None,
+            }
+            if role == 'doctor':
+                DoctorProfile.objects.update_or_create(user=new_staff, defaults=profile_defaults)
+            elif role == 'nurse':
+                NurseProfile.objects.update_or_create(user=new_staff, defaults=profile_defaults)
+
+            # Get profile
+            profile = None
+            if role == 'doctor' and hasattr(new_staff, 'doctor_profile'):
+                profile = new_staff.doctor_profile
+            elif role == 'nurse' and hasattr(new_staff, 'nurse_profile'):
+                profile = new_staff.nurse_profile
+
             # Return created staff member data
             return Response({
                 'id': new_staff.id,
@@ -1385,6 +1440,16 @@ class StaffViewSet(ViewSet):
                 'phone': new_staff.phone,
                 'role': new_staff.role,
                 'specialization': specialization,
+                'gender': new_staff.gender,
+                'birth_date': str(new_staff.birth_date) if new_staff.birth_date else None,
+                'address': new_staff.address,
+                'city': new_staff.city,
+                'language': new_staff.language,
+                'years_of_experience': profile.years_of_experience if profile else None,
+                'offline_consultation_price': str(profile.offline_consultation_price) if profile and profile.offline_consultation_price is not None else None,
+                'online_consultation_price': str(profile.online_consultation_price) if profile and profile.online_consultation_price is not None else None,
+                'preferred_consultation_duration': profile.preferred_consultation_duration if profile else None,
+                'work_schedule': profile.work_schedule if profile else None,
                 'is_active': new_staff.is_active,
                 'created_at': new_staff.created_at.isoformat() if new_staff.created_at else None,
                 'clinic': {
@@ -1414,7 +1479,7 @@ class StaffViewSet(ViewSet):
 
         try:
             # Get the staff member
-            staff_member = User.objects.get(id=pk, role__in=['doctor', 'nurse'], is_deleted=False)
+            staff_member = User.objects.get(id=pk, role__in=['doctor', 'nurse'])
 
             # Check if admin has permission to update this staff member
             admin_clinic_id = request.user.clinic_id if hasattr(request.user, 'clinic_id') else None
@@ -1435,6 +1500,8 @@ class StaffViewSet(ViewSet):
 
             # Validate phone uniqueness if phone is being changed
             new_phone = request.data.get('phone')
+            if new_phone:
+                new_phone = '+' + ''.join(c for c in new_phone if c.isdigit())
             if new_phone and new_phone != staff_member.phone:
                 if User.objects.filter(phone=new_phone).exclude(id=pk).exists():
                     return Response(
@@ -1450,7 +1517,19 @@ class StaffViewSet(ViewSet):
             if 'email' in request.data:
                 staff_member.email = request.data['email']
             if 'phone' in request.data:
-                staff_member.phone = request.data['phone']
+                staff_member.phone = new_phone
+
+            # Update additional fields if provided
+            if 'gender' in request.data:
+                staff_member.gender = request.data['gender'] if request.data['gender'] else None
+            if 'birth_date' in request.data:
+                staff_member.birth_date = request.data['birth_date'] if request.data['birth_date'] else None
+            if 'address' in request.data:
+                staff_member.address = request.data['address'] if request.data['address'] else None
+            if 'city' in request.data:
+                staff_member.city = request.data['city'] if request.data['city'] else None
+            if 'language' in request.data:
+                staff_member.language = request.data['language'] if request.data['language'] else 'ru'
 
             # Update role if provided (doctor/nurse)
             if 'role' in request.data and request.data['role'] in ['doctor', 'nurse']:
@@ -1545,6 +1624,10 @@ class StaffViewSet(ViewSet):
             if 'is_active' in request.data:
                 staff_member.is_active = request.data['is_active']
 
+            # Soft delete if requested
+            if 'is_deleted' in request.data:
+                staff_member.is_deleted = bool(request.data['is_deleted'])
+
             # Update clinic if provided (only for global admins)
             if 'clinic_id' in request.data and not admin_clinic_id:
                 clinic_id = request.data['clinic_id']
@@ -1561,6 +1644,31 @@ class StaffViewSet(ViewSet):
 
             staff_member.save()
 
+            # Update profile fields if any are provided
+            profile_fields = ['years_of_experience', 'offline_consultation_price', 'online_consultation_price', 'preferred_consultation_duration', 'work_schedule']
+            if any(f in request.data for f in profile_fields):
+                profile_defaults = {}
+                if 'years_of_experience' in request.data:
+                    val = request.data['years_of_experience']
+                    profile_defaults['years_of_experience'] = int(val) if val else None
+                if 'offline_consultation_price' in request.data:
+                    val = request.data['offline_consultation_price']
+                    profile_defaults['offline_consultation_price'] = val if val else None
+                if 'online_consultation_price' in request.data:
+                    val = request.data['online_consultation_price']
+                    profile_defaults['online_consultation_price'] = val if val else None
+                if 'preferred_consultation_duration' in request.data:
+                    val = request.data['preferred_consultation_duration']
+                    profile_defaults['preferred_consultation_duration'] = int(val) if val else None
+                if 'work_schedule' in request.data:
+                    val = request.data['work_schedule']
+                    profile_defaults['work_schedule'] = val if val else None
+
+                if staff_member.role == 'doctor':
+                    DoctorProfile.objects.update_or_create(user=staff_member, defaults=profile_defaults)
+                elif staff_member.role == 'nurse':
+                    NurseProfile.objects.update_or_create(user=staff_member, defaults=profile_defaults)
+
             # Get updated specializations for response (as comma-separated string)
             specialization = None
             if staff_member.role == 'doctor':
@@ -1576,6 +1684,14 @@ class StaffViewSet(ViewSet):
                 elif staff_member.nurse_specialization:
                     specialization = staff_member.nurse_specialization.name_ru
 
+            # Get profile (refresh to pick up updates)
+            staff_member.refresh_from_db()
+            profile = None
+            if staff_member.role == 'doctor' and hasattr(staff_member, 'doctor_profile'):
+                profile = staff_member.doctor_profile
+            elif staff_member.role == 'nurse' and hasattr(staff_member, 'nurse_profile'):
+                profile = staff_member.nurse_profile
+
             # Return updated staff member data
             return Response({
                 'id': staff_member.id,
@@ -1585,6 +1701,16 @@ class StaffViewSet(ViewSet):
                 'phone': staff_member.phone,
                 'role': staff_member.role,
                 'specialization': specialization,
+                'gender': staff_member.gender,
+                'birth_date': str(staff_member.birth_date) if staff_member.birth_date else None,
+                'address': staff_member.address,
+                'city': staff_member.city,
+                'language': staff_member.language,
+                'years_of_experience': profile.years_of_experience if profile else None,
+                'offline_consultation_price': str(profile.offline_consultation_price) if profile and profile.offline_consultation_price is not None else None,
+                'online_consultation_price': str(profile.online_consultation_price) if profile and profile.online_consultation_price is not None else None,
+                'preferred_consultation_duration': profile.preferred_consultation_duration if profile else None,
+                'work_schedule': profile.work_schedule if profile else None,
                 'is_active': staff_member.is_active,
                 'availability_status': staff_member.availability_status,
                 'created_at': staff_member.created_at.isoformat() if staff_member.created_at else None,
@@ -1736,6 +1862,8 @@ class PatientsViewSet(ViewSet):
             last_name = request.data.get('last_name')
             email = request.data.get('email')
             phone = request.data.get('phone')
+            if phone:
+                phone = '+' + ''.join(c for c in phone if c.isdigit())
             password = request.data.get('password')
             birth_date = request.data.get('birth_date')
             gender = request.data.get('gender')
