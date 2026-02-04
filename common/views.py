@@ -1799,8 +1799,9 @@ class PatientsViewSet(ViewSet):
 
             # Filter patients based on admin's clinic
             clinic_id = request.user.clinic_id if hasattr(request.user, 'clinic_id') else None
+            show_all = request.query_params.get('all', 'false').lower() == 'true'
 
-            if clinic_id:
+            if clinic_id and not show_all:
                 # Clinic admin: filter by their clinic
                 patients = User.objects.filter(
                     role='patient',
@@ -1808,7 +1809,7 @@ class PatientsViewSet(ViewSet):
                     is_deleted=False
                 ).order_by('-created_at')
             else:
-                # Global admin: get all patients
+                # Global admin or all=true: get all patients
                 patients = User.objects.filter(
                     role='patient',
                     is_deleted=False
