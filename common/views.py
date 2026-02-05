@@ -394,7 +394,7 @@ class UserViewSet(ModelViewSet):
         doctors = User.objects.filter(
             role="doctor",
             is_active=True
-        ).select_related('doctor_specialization', 'clinic', 'clinic__city')
+        ).select_related('doctor_specialization', 'clinic', 'clinic__city', 'doctor_profile')
 
         if not doctors.exists():
             return Response({"error": "No available doctors found."}, status=status.HTTP_404_NOT_FOUND)
@@ -427,6 +427,8 @@ class UserViewSet(ModelViewSet):
                     "city": clinic.city.name_ru if clinic.city else None,
                 }
 
+            doctor_profile = getattr(doctor, 'doctor_profile', None)
+
             doctor_list.append({
                 "id": doctor.id,
                 "name": f"{doctor.first_name} {doctor.last_name}",
@@ -434,6 +436,10 @@ class UserViewSet(ModelViewSet):
                 "doctor_type": specialization,
                 "availability_status": doctor.availability_status or 'offline',
                 "availability_note": doctor.availability_note or '',
+                "language": doctor.language or 'ru',
+                "years_of_experience": doctor_profile.years_of_experience if doctor_profile else None,
+                "online_consultation_price": str(doctor_profile.online_consultation_price) if doctor_profile and doctor_profile.online_consultation_price else None,
+                "work_schedule": doctor_profile.work_schedule if doctor_profile else None,
                 # Include clinic information
                 "clinic": clinic_data,
                 # Include additional specialization details
