@@ -261,7 +261,9 @@ class DoctorProfile(BaseModel):
     offline_consultation_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Цена офлайн консультации")
     online_consultation_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Цена онлайн консультации")
     preferred_consultation_duration = models.PositiveIntegerField(null=True, blank=True, verbose_name="Длительность консультации (мин)")
-    work_schedule = models.JSONField(null=True, blank=True, verbose_name="Расписание работы")
+    work_schedule = models.JSONField(null=True, blank=True, verbose_name="Расписание работы (Онлайн)")  # For backward compatibility, now used for online consultations
+    online_work_schedule = models.JSONField(null=True, blank=True, verbose_name="Расписание работы (Онлайн консультации)")
+    offline_work_schedule = models.JSONField(null=True, blank=True, verbose_name="Расписание работы (Оффлайн консультации)")
 
     # Additional clinics - can work in multiple locations
     additional_clinics = models.ManyToManyField('clinics.Clinics', blank=True, related_name='doctors', verbose_name="Дополнительные клиники")
@@ -294,7 +296,9 @@ class NurseProfile(BaseModel):
     offline_consultation_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Цена офлайн консультации")
     online_consultation_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Цена онлайн консультации")
     preferred_consultation_duration = models.PositiveIntegerField(null=True, blank=True, verbose_name="Длительность консультации (мин)")
-    work_schedule = models.JSONField(null=True, blank=True, verbose_name="Расписание работы")
+    work_schedule = models.JSONField(null=True, blank=True, verbose_name="Расписание работы (Онлайн)")  # For backward compatibility, now used for online consultations
+    online_work_schedule = models.JSONField(null=True, blank=True, verbose_name="Расписание работы (Онлайн консультации)")
+    offline_work_schedule = models.JSONField(null=True, blank=True, verbose_name="Расписание работы (Оффлайн консультации)")
 
     # Additional clinics - can work in multiple locations
     additional_clinics = models.ManyToManyField('clinics.Clinics', blank=True, related_name='nurses', verbose_name="Дополнительные клиники")
