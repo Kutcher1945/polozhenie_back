@@ -27,7 +27,14 @@ class UserSerializer(serializers.ModelSerializer):
         return dict(User.GENDER_CHOICES).get(obj.gender, "Не указано") if obj.gender else "Не указано"
 
     def get_language_display(self, obj):
-        return dict(User.LANGUAGE_CHOICES).get(obj.language, "Не указано") if obj.language else "Не указано"
+        if not obj.language:
+            return "Не указано"
+        # Handle both list (JSONField) and string formats
+        if isinstance(obj.language, list):
+            choices_dict = dict(User.LANGUAGE_CHOICES)
+            return ", ".join([choices_dict.get(lang, lang) for lang in obj.language])
+        # Fallback for single string value
+        return dict(User.LANGUAGE_CHOICES).get(obj.language, "Не указано")
 
     def get_marital_status_display(self, obj):
         return dict(User.MARITAL_STATUS_CHOICES).get(obj.marital_status, "Не указано") if obj.marital_status else "Не указано"
@@ -101,7 +108,14 @@ class UserProfileSerializer(serializers.ModelSerializer):
         return dict(User.GENDER_CHOICES).get(obj.gender, "Не указано") if obj.gender else "Не указано"
 
     def get_language_display(self, obj):
-        return dict(User.LANGUAGE_CHOICES).get(obj.language, "Не указано") if obj.language else "Не указано"
+        if not obj.language:
+            return "Не указано"
+        # Handle both list (JSONField) and string formats
+        if isinstance(obj.language, list):
+            choices_dict = dict(User.LANGUAGE_CHOICES)
+            return ", ".join([choices_dict.get(lang, lang) for lang in obj.language])
+        # Fallback for single string value
+        return dict(User.LANGUAGE_CHOICES).get(obj.language, "Не указано")
 
     def get_marital_status_display(self, obj):
         return dict(User.MARITAL_STATUS_CHOICES).get(obj.marital_status, "Не указано") if obj.marital_status else "Не указано"
