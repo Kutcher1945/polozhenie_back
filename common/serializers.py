@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.utils import timezone
-from .models import User, UserSession
+from .models import User, UserSession, PatientMedicalProfile
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -331,3 +331,60 @@ def refresh_jwt_tokens(refresh_token_string):
         'access_token': str(new_access),
         'refresh_token': str(new_refresh),
     }
+
+
+class PatientMedicalProfileSerializer(serializers.ModelSerializer):
+    """
+    Serializer for patient medical information.
+    Includes display fields for better frontend presentation.
+    """
+    
+    blood_type_display = serializers.SerializerMethodField()
+    rhesus_factor_display = serializers.SerializerMethodField()
+    fluorography_status_display = serializers.SerializerMethodField()
+    immunization_status_display = serializers.SerializerMethodField()
+    patient_name = serializers.SerializerMethodField()
+    last_modified_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PatientMedicalProfile
+        fields = [
+            'id',
+            'user',
+            'patient_name',
+            'blood_type',
+            'blood_type_display',
+            'rhesus_factor',
+            'rhesus_factor_display',
+            'fluorography_status',
+            'fluorography_status_display',
+            'fluorography_date',
+            'immunization_status',
+            'immunization_status_display',
+            'immunization_date',
+            'last_modified_by',
+            'last_modified_by_name',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at', 'last_modified_by']
+
+    def get_blood_type_display(self, obj):
+        return dict(User.BLOOD_TYPE_CHOICES).get(obj.blood_type, "Не указано") if obj.blood_type else "Не указано"
+
+    def get_rhesus_factor_display(self, obj):
+        return dict(User.RHESUS_FACTOR_CHOICES).get(obj.rhesus_factor, "Не указан") if obj.rhesus_factor else "Не указан"
+
+    def get_fluorography_status_display(self, obj):
+        return dict(User.FLUOROGRAPHY_STATUS_CHOICES).get(obj.fluorography_status, "Не указано") if obj.fluorography_status else "Не указано"
+
+    def get_immunization_status_display(self, obj):
+        return dict(User.IMMUNIZATION_STATUS_CHOICES).get(obj.immunization_status, "Не указано") if obj.immunization_status else "Не указано"
+
+    def get_patient_name(self, obj):
+        return f"{obj.user.first_name} {obj.user.last_name}".strip() or obj.user.email
+
+    def get_last_modified_by_name(self, obj):
+        if obj.last_modified_by:
+            return f"{obj.last_modified_by.first_name} {obj.last_modified_by.last_name}".strip() or obj.last_modified_by.email
+        return None

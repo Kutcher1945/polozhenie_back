@@ -2,6 +2,7 @@ from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
 from django.contrib.auth.hashers import make_password
 from django.contrib.auth.base_user import BaseUserManager
+from auditlog.registry import auditlog
 
 
 class UserManager(BaseUserManager):
@@ -395,6 +396,95 @@ class UserSession(BaseModel):
 # Migration completed: 2025-12-05
 # - 52 tokens successfully migrated
 # - Old table 'common_authtoken' can be dropped manually if needed
+
+
+class PatientMedicalProfile(BaseModel):
+    """
+    Medical information for patients.
+    Separated from User model for:
+    - HIPAA/GDPR compliance with audit trail
+    - Better security and access control
+    - Easier to extend with medical documents
+    """
+
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name='medical_profile',
+        limit_choices_to={'role': 'patient'},
+        verbose_name="Пациент"
+    )
+
+    # Blood information
+    blood_type = models.CharField(
+        max_length=5,
+        choices=User.BLOOD_TYPE_CHOICES,
+        null=True,
+        blank=True,
+        verbose_name="Группа крови"
+    )
+    rhesus_factor = models.CharField(
+        max_length=10,
+        choices=User.RHESUS_FACTOR_CHOICES,
+        null=True,
+        blank=True,
+        verbose_name="Резус-фактор"
+    )
+
+    # Fluorography
+    fluorography_status = models.CharField(
+        max_length=20,
+        choices=User.FLUOROGRAPHY_STATUS_CHOICES,
+        null=True,
+        blank=True,
+        verbose_name="Статус флюорографии"
+    )
+    fluorography_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Дата флюорографии"
+    )
+
+    # Immunization
+    immunization_status = models.CharField(
+        max_length=20,
+        choices=User.IMMUNIZATION_STATUS_CHOICES,
+        null=True,
+        blank=True,
+        verbose_name="Статус иммунизации"
+    )
+    immunization_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Дата последней иммунизации"
+    )
+
+    # Audit tracking - who last modified this profile
+    last_modified_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='modified_medical_profiles',
+        verbose_name="Последнее изменение"
+    )
+
+    def __str__(self):
+        return f"Medical Profile - {self.user.first_name} {self.user.last_name}"
+
+    class Meta:
+        db_table = "patient_medical_profiles"
+        verbose_name = "Медицинский профиль пациента"
+        verbose_name_plural = "Медицинские профили пациентов"
+        permissions = [
+            ("view_own_medical_profile", "Can view own medical profile"),
+            ("view_patient_medical_profile", "Can view patient medical profiles"),
+            ("modify_patient_medical_profile", "Can modify patient medical profiles"),
+        ]
+
+
+# Register model for audit logging
+auditlog.register(PatientMedicalProfile)
 
 
 # class ClinicalProtocol(models.Model):

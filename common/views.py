@@ -12,11 +12,12 @@ from rest_framework import status
 from drf_yasg.utils import swagger_auto_schema
 from django.db.models import Q
 from django.contrib.auth.hashers import make_password
-from .models import User, DoctorSpecialization, NurseSpecialization, DoctorProfile, NurseProfile, UserSession
+from .models import User, DoctorSpecialization, NurseSpecialization, DoctorProfile, NurseProfile, UserSession, PatientMedicalProfile
 from rest_framework.authtoken.models import Token
 from rest_framework_simplejwt.tokens import RefreshToken
 from .serializers import (
     UserSerializer, UserProfileSerializer, UserSessionSerializer,
+    PatientMedicalProfileSerializer,
     create_jwt_tokens_for_user, refresh_jwt_tokens
 )
 from .permissions import IsDoctor, IsAdmin, IsNurse
@@ -2626,3 +2627,67 @@ class ScheduleViewSet(ViewSet):
             return Response({'status': new_status}, status=status.HTTP_200_OK)
 
         return Response({'error': 'Invalid event type'}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class PatientMedicalProfileViewSet(ModelViewSet):
+    """
+    API endpoint for patient medical profiles.
+    
+    Access control:
+    - Patients can only view/update their own medical profile
+    - Doctors can view their patients' medical profiles
+    - Admins can view all medical profiles
+    - Nurses can view patients' medical profiles
+    
+    All changes are automatically logged via django-auditlog.
+    """
+    serializer_class = PatientMedicalProfileSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        user = self.request.user
+        
+        # Patients can only see their own profile
+        if user.role == 'patient':
+            return PatientMedicalProfile.objects.filter(user=user)
+        
+        # Doctors and nurses can see all patient profiles
+        # TODO: In future, filter by actual doctor-patient relationships
+        elif user.role in ['doctor', 'nurse']:
+            return PatientMedicalProfile.objects.all()
+        
+        # Admins can see all profiles
+        elif user.role == 'admin':
+            return PatientMedicalProfile.objects.all()
+        
+        # Default: no access
+        return PatientMedicalProfile.objects.none()
+    
+    def perform_update(self, serializer):
+        """Track who modified the profile for audit purposes"""
+        serializer.save(last_modified_by=self.request.user)
+    
+    def perform_create(self, serializer):
+        """Track who created the profile"""
+        serializer.save(last_modified_by=self.request.user)
+    
+    @action(detail=False, methods=['get'], url_path='me')
+    def my_profile(self, request):
+        """
+        Get the authenticated patient's own medical profile.
+        Creates one if it doesn't exist.
+        """
+        if request.user.role != 'patient':
+            return Response(
+                {'error': 'Only patients have medical profiles'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Get or create medical profile
+        profile, created = PatientMedicalProfile.objects.get_or_create(
+            user=request.user,
+            defaults={'last_modified_by': request.user}
+        )
+        
+        serializer = self.get_serializer(profile)
+        return Response(serializer.data)
