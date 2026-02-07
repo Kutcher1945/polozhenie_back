@@ -1,5 +1,6 @@
 from django.db import models
-from django.contrib.auth.hashers import check_password, make_password
+from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
+from django.contrib.auth.hashers import make_password
 from django.contrib.auth.base_user import BaseUserManager
 
 
@@ -75,7 +76,7 @@ class NurseSpecialization(BaseModel):
         verbose_name_plural = "Специализации медсестёр"
 
 
-class User(BaseModel):
+class User(AbstractBaseUser, PermissionsMixin, BaseModel):
     ROLE_CHOICES = [
         ('patient', 'Пациент'),
         ('doctor', 'Доктор'),
@@ -129,18 +130,17 @@ class User(BaseModel):
         ('none', 'Отсутствует'),
     ]
 
-    # Основные поля
-    email = models.EmailField(unique=True, verbose_name="Email")
-    phone = models.CharField(max_length=15, unique=True, null=True, blank=True, verbose_name="Телефон")
-    password = models.CharField(max_length=255, verbose_name="Пароль")  # ✅ Must store hashed passwords!
+    # Основные поля (password provided by AbstractBaseUser)
+    email = models.EmailField(unique=True, db_index=True, verbose_name="Email")
+    phone = models.CharField(max_length=15, unique=True, null=True, blank=True, db_index=True, verbose_name="Телефон")
     first_name = models.CharField(max_length=150, null=True, blank=True, verbose_name="Имя")
     last_name = models.CharField(max_length=150, null=True, blank=True, verbose_name="Фамилия")
     is_active = models.BooleanField(default=True, verbose_name="Активен")
     reset_code = models.CharField(max_length=10, blank=True, null=True)
     reset_code_created_at = models.DateTimeField(null=True, blank=True)
     is_staff = models.BooleanField(default=False, verbose_name="Сотрудник")
-    is_superuser = models.BooleanField(default=False, verbose_name="Суперпользователь")
-    role = models.CharField(max_length=15, choices=ROLE_CHOICES, default='patient', verbose_name="Роль")
+    # is_superuser provided by PermissionsMixin
+    role = models.CharField(max_length=15, choices=ROLE_CHOICES, default='patient', db_index=True, verbose_name="Роль")
 
     # Персональные данные для профиля
     birth_date = models.DateField(null=True, blank=True, verbose_name="Дата рождения")
@@ -213,43 +213,26 @@ class User(BaseModel):
     
     objects = UserManager()
 
-    def set_password(self, raw_password):
-        """Hashes and saves the password"""
-        self.password = make_password(raw_password)
+    # All authentication methods provided by AbstractBaseUser:
+    # - set_password(), check_password(), get_username()
+    # - is_authenticated, is_anonymous properties
 
-    def check_password(self, raw_password):
-        """Verifies the password"""
-        return check_password(raw_password, self.password)
-
-    @property
-    def is_authenticated(self):
-        """Custom property to check authentication status"""
-        return True
-
-    @property
-    def is_anonymous(self):
-        """Always return False for authenticated users"""
-        return False
-
-    def get_username(self):
-        """Return the username field value"""
-        return getattr(self, self.USERNAME_FIELD)
-
-    def has_perm(self, perm, obj=None):
-        """Check if user has specific permission"""
-        return self.is_superuser
-
-    def has_module_perms(self, app_label):
-        """Check if user has permissions for app"""
-        return self.is_superuser
+    # All permission methods provided by PermissionsMixin:
+    # - has_perm(), has_module_perms()
 
     def __str__(self):
-        return f"{self.email} - {self.get_role_display()}"
+        full_name = f"{self.first_name} {self.last_name}".strip()
+        return f"{full_name} ({self.email})" if full_name else self.email
 
     class Meta:
         db_table = "common_users"
         verbose_name = "Пользователь"
         verbose_name_plural = "Пользователи"
+        ordering = ["last_name", "first_name"]
+        indexes = [
+            models.Index(fields=['role', 'is_active']),
+            models.Index(fields=['email', 'role']),
+        ]
 
 
 
