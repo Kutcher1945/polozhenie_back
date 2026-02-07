@@ -23,6 +23,7 @@ import random
 from livekit.api import AccessToken, VideoGrants
 from django.http import JsonResponse
 from django.views.decorators.csrf import ensure_csrf_cookie
+from common.utils.email_utils import send_consultation_created_email
 
 logger = logging.getLogger(__name__)
 
@@ -151,10 +152,31 @@ class ConsultationViewSet(ModelViewSet):
             status="pending",
             is_urgent=is_urgent,
         )
-    
+
         urgency_text = "URGENT" if is_urgent else "non-urgent"
         print(f"🔔 Doctor {doctor.email} received a {urgency_text} consultation request from {user.email}")
-    
+
+        # 📧 Send email notification to patient with access code
+        try:
+            patient_name = f"{user.first_name} {user.last_name}".strip() or user.email.split("@")[0]
+            doctor_name = f"{doctor.first_name} {doctor.last_name}".strip() or "Врач"
+
+            # Build consultation link (adjust URL based on your frontend)
+            consultation_link = f"{settings.FRONTEND_URL}/video-call/patient?meetingId={meeting_id}"
+
+            send_consultation_created_email(
+                patient_email=user.email,
+                patient_name=patient_name,
+                doctor_name=doctor_name,
+                access_code=consultation.access_code,
+                consultation_link=consultation_link,
+                scheduled_at=consultation.scheduled_at
+            )
+            logger.info(f"✅ Email sent to {user.email} with access code {consultation.access_code}")
+        except Exception as email_error:
+            # Log error but don't fail the consultation creation
+            logger.error(f"❌ Failed to send email notification: {str(email_error)}")
+
         return Response(
             {
                 "message": "Consultation request sent!",
@@ -165,6 +187,7 @@ class ConsultationViewSet(ModelViewSet):
                 },
                 "meeting_id": meeting_id,
                 "consultation_id": consultation.id,
+                "access_code": consultation.access_code,
             },
             status=status.HTTP_200_OK,
         )
@@ -1112,3 +1135,96 @@ class ConsultationViewSet(ModelViewSet):
                 "success": False,
                 "error": "Failed to fetch available time slots"
             }, status=500)
+
+    @action(detail=False, methods=["post"], url_path="verify-access-code", permission_classes=[AllowAny])
+    def verify_access_code(self, request):
+        """
+        Verify consultation access code and return consultation details
+        Allows unauthenticated access - public endpoint
+
+        POST /api/v1/consultations/verify-access-code/
+        {
+            "access_code": "ABC123"
+        }
+
+        Returns consultation meeting_id, status, and basic details if code is valid
+        """
+        try:
+            access_code = request.data.get("access_code", "").strip().upper()
+
+            if not access_code:
+                return Response({
+                    "success": False,
+                    "error": "Access code is required"
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            # Validate code length
+            if len(access_code) != 6:
+                return Response({
+                    "success": False,
+                    "error": "Access code must be 6 characters"
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            # Find consultation with this access code
+            try:
+                consultation = Consultation.objects.select_related(
+                    'patient', 'doctor', 'doctor__doctor_specialization'
+                ).get(access_code=access_code)
+            except Consultation.DoesNotExist:
+                logger.warning(f"⚠️ Invalid access code attempted: {access_code}")
+                return Response({
+                    "success": False,
+                    "error": "Invalid access code"
+                }, status=status.HTTP_404_NOT_FOUND)
+
+            # Check if consultation is cancelled or missed
+            if consultation.status in ["cancelled", "missed"]:
+                return Response({
+                    "success": False,
+                    "error": f"This consultation has been {consultation.status}",
+                    "status": consultation.status
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            # Build response with consultation details
+            specialization = None
+            if consultation.doctor.doctor_specialization:
+                specialization = {
+                    "ru": consultation.doctor.doctor_specialization.name_ru,
+                    "en": consultation.doctor.doctor_specialization.name_en,
+                    "kz": consultation.doctor.doctor_specialization.name_kz
+                }
+
+            logger.info(f"✅ Access code verified: {access_code} for consultation {consultation.meeting_id}")
+
+            return Response({
+                "success": True,
+                "consultation": {
+                    "id": consultation.id,
+                    "meeting_id": consultation.meeting_id,
+                    "status": consultation.status,
+                    "is_urgent": consultation.is_urgent,
+                    "scheduled_at": consultation.scheduled_at.isoformat() if consultation.scheduled_at else None,
+                    "patient": {
+                        "id": consultation.patient.id,
+                        "first_name": consultation.patient.first_name,
+                        "last_name": consultation.patient.last_name,
+                        "email": consultation.patient.email
+                    },
+                    "doctor": {
+                        "id": consultation.doctor.id,
+                        "first_name": consultation.doctor.first_name,
+                        "last_name": consultation.doctor.last_name,
+                        "email": consultation.doctor.email,
+                        "specialization": specialization
+                    }
+                }
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            logger.error(f"❌ Error verifying access code: {str(e)}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return Response({
+                "success": False,
+                "error": "An error occurred while verifying the access code"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

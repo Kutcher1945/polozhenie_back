@@ -175,6 +175,9 @@ SIMPLE_JWT = {
 # Ensure wildcard (*) is NOT used together with specific origins
 CORS_ALLOW_ALL_ORIGINS = False
 
+# Frontend URL for email links
+FRONTEND_URL = "https://www.zhan.care"
+
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "https://www.zhan.care",

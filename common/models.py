@@ -147,7 +147,7 @@ class User(BaseModel):
     gender = models.CharField(max_length=10, choices=GENDER_CHOICES, null=True, blank=True, verbose_name="Пол")
     address = models.TextField(null=True, blank=True, verbose_name="Адрес")
     city = models.CharField(max_length=100, null=True, blank=True, verbose_name="Город")
-    language = models.CharField(max_length=10, choices=LANGUAGE_CHOICES, default='ru', null=True, blank=True, verbose_name="Язык")
+    language = models.JSONField(null=True, blank=True, default=list, verbose_name="Языки")  # Changed to JSONField to support multiple languages
     citizenship = models.CharField(max_length=100, default='Казахстан', null=True, blank=True, verbose_name="Гражданство")
     marital_status = models.CharField(max_length=20, choices=MARITAL_STATUS_CHOICES, null=True, blank=True, verbose_name="Семейное положение")
     profession = models.CharField(max_length=255, null=True, blank=True, verbose_name="Профессия")
