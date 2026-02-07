@@ -67,7 +67,7 @@ class ConsultationSerializer(serializers.ModelSerializer):
             "id", "patient", "doctor",
             "patient_name", "patient_email", "patient_first_name", "patient_last_name",
             "doctor_first_name", "doctor_last_name", "doctor_email",
-            "meeting_id", "status", "is_urgent", "scheduled_at",
+            "meeting_id", "access_code", "status", "is_urgent", "scheduled_at",
             "started_at", "ended_at", "created_at",
             "timeslot", "ai_recommendation",
             "is_scheduled_soon", "consultation_type",
@@ -76,7 +76,7 @@ class ConsultationSerializer(serializers.ModelSerializer):
             # Additional consultation data
             "session_notes", "prescription", "recommendations", "transcription"
         ]
-        read_only_fields = ["started_at", "ended_at", "created_at"]
+        read_only_fields = ["started_at", "ended_at", "created_at", "access_code"]
 
     def get_is_scheduled_soon(self, obj):
         return obj.is_scheduled_soon() if hasattr(obj, 'is_scheduled_soon') else False

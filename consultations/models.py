@@ -3,6 +3,21 @@ from django.utils import timezone
 from django.core.exceptions import ValidationError
 from datetime import datetime, timedelta
 from common.models import BaseModel
+import random
+import string
+
+
+def generate_access_code(length=6):
+    """
+    Generate a unique 6-character alphanumeric access code for consultations.
+    Uses uppercase letters and digits for simplicity.
+    """
+    characters = string.ascii_uppercase + string.digits
+    while True:
+        code = ''.join(random.choices(characters, k=length))
+        # Check if code already exists
+        if not Consultation.objects.filter(access_code=code).exists():
+            return code
 
 
 class TimeSlot(BaseModel):
@@ -112,6 +127,10 @@ class Consultation(BaseModel):
         "common.User", on_delete=models.CASCADE, related_name="consultations_as_doctor", verbose_name="Доктор"
     )
     meeting_id = models.CharField(max_length=255, unique=True, verbose_name="ID Видеозвонка")
+    access_code = models.CharField(
+        max_length=6, unique=True, verbose_name="Код доступа",
+        help_text="6-значный код для доступа к консультации"
+    )
     status = models.CharField(
         max_length=10, choices=STATUS_CHOICES, default="pending", verbose_name="Статус"
     )
@@ -147,6 +166,12 @@ class Consultation(BaseModel):
     prescription = models.TextField(blank=True, null=True, verbose_name="Рецепт")
     recommendations = models.TextField(blank=True, null=True, verbose_name="Рекомендации")
     transcription = models.TextField(blank=True, null=True, verbose_name="Транскрипция")
+
+    def save(self, *args, **kwargs):
+        """Override save to generate access_code if not provided"""
+        if not self.access_code:
+            self.access_code = generate_access_code()
+        super().save(*args, **kwargs)
 
     def clean(self):
         """Validate consultation constraints"""
