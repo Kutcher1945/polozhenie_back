@@ -390,12 +390,11 @@ class UserViewSet(ModelViewSet):
     @action(detail=False, methods=["get"], url_path="doctor/available")
     def get_available_doctors(self, request):
         """Fetch a list of available doctors."""
-        # Optimize query to avoid N+1 problem by prefetching specializations and clinic
-        # Show all active doctors (regardless of availability status for real-time updates)
+        # Optimize query to avoid N+1 problem by prefetching profile and related data
         doctors = User.objects.filter(
             role="doctor",
             is_active=True
-        ).select_related('doctor_specialization', 'clinic', 'clinic__city', 'doctor_profile')
+        ).select_related('doctor_profile', 'doctor_profile__clinic', 'doctor_profile__clinic__city', 'doctor_profile__specialization')
 
         if not doctors.exists():
             return Response({"error": "No available doctors found."}, status=status.HTTP_404_NOT_FOUND)
@@ -405,21 +404,27 @@ class UserViewSet(ModelViewSet):
 
         doctor_list = []
         for doctor in doctors:
-            # Get specialization in requested language
-            if doctor.doctor_specialization:
-                if language == 'kz':
-                    specialization = doctor.doctor_specialization.name_kz
-                elif language == 'en':
-                    specialization = doctor.doctor_specialization.name_en
-                else:
-                    specialization = doctor.doctor_specialization.name_ru
-            else:
-                specialization = doctor.doctor_type or "Специальность не указана"
+            doctor_profile = getattr(doctor, 'doctor_profile', None)
 
-            # Get clinic information if doctor has clinic
+            if not doctor_profile:
+                continue  # Skip doctors without profiles
+
+            # Get specialization in requested language from profile
+            specialization = "Специальность не указана"
+            if doctor_profile.specialization:
+                if language == 'kz':
+                    specialization = doctor_profile.specialization.name_kz
+                elif language == 'en':
+                    specialization = doctor_profile.specialization.name_en
+                else:
+                    specialization = doctor_profile.specialization.name_ru
+            elif doctor_profile.doctor_type:
+                specialization = doctor_profile.doctor_type
+
+            # Get clinic information from profile
             clinic_data = None
-            if doctor.clinic:
-                clinic = doctor.clinic
+            if doctor_profile.clinic:
+                clinic = doctor_profile.clinic
                 clinic_data = {
                     "id": clinic.id,
                     "name": clinic.name,
@@ -428,28 +433,26 @@ class UserViewSet(ModelViewSet):
                     "city": clinic.city.name_ru if clinic.city else None,
                 }
 
-            doctor_profile = getattr(doctor, 'doctor_profile', None)
-
             doctor_list.append({
                 "id": doctor.id,
                 "name": f"{doctor.first_name} {doctor.last_name}",
                 "email": doctor.email,
                 "doctor_type": specialization,
-                "availability_status": doctor.availability_status or 'offline',
-                "availability_note": doctor.availability_note or '',
+                "availability_status": doctor_profile.availability_status or 'offline',
+                "availability_note": doctor_profile.availability_note or '',
                 "language": doctor.language or 'ru',
-                "years_of_experience": doctor_profile.years_of_experience if doctor_profile else None,
-                "online_consultation_price": str(doctor_profile.online_consultation_price) if doctor_profile and doctor_profile.online_consultation_price else None,
-                "work_schedule": doctor_profile.work_schedule if doctor_profile else None,
+                "years_of_experience": doctor_profile.years_of_experience,
+                "online_consultation_price": str(doctor_profile.online_consultation_price) if doctor_profile.online_consultation_price else None,
+                "work_schedule": doctor_profile.work_schedule,
                 # Include clinic information
                 "clinic": clinic_data,
                 # Include additional specialization details
                 "specialization": {
-                    "id": doctor.doctor_specialization.id if doctor.doctor_specialization else None,
-                    "name_ru": doctor.doctor_specialization.name_ru if doctor.doctor_specialization else None,
-                    "name_kz": doctor.doctor_specialization.name_kz if doctor.doctor_specialization else None,
-                    "name_en": doctor.doctor_specialization.name_en if doctor.doctor_specialization else None,
-                } if doctor.doctor_specialization else None
+                    "id": doctor_profile.specialization.id if doctor_profile.specialization else None,
+                    "name_ru": doctor_profile.specialization.name_ru if doctor_profile.specialization else None,
+                    "name_kz": doctor_profile.specialization.name_kz if doctor_profile.specialization else None,
+                    "name_en": doctor_profile.specialization.name_en if doctor_profile.specialization else None,
+                } if doctor_profile.specialization else None
             })
 
         return Response({"doctors": doctor_list}, status=status.HTTP_200_OK)
@@ -462,12 +465,11 @@ class UserViewSet(ModelViewSet):
     @action(detail=False, methods=["get"], url_path="nurse/available")
     def get_available_nurses(self, request):
         """Fetch a list of available nurses."""
-        # Optimize query to avoid N+1 problem by prefetching specializations and clinic
-        # Show all active nurses (regardless of availability status for real-time updates)
+        # Optimize query to avoid N+1 problem by prefetching profile and related data
         nurses = User.objects.filter(
             role="nurse",
             is_active=True
-        ).select_related('nurse_specialization', 'clinic', 'clinic__city')
+        ).select_related('nurse_profile', 'nurse_profile__clinic', 'nurse_profile__clinic__city', 'nurse_profile__specialization')
 
         if not nurses.exists():
             return Response({"error": "No available nurses found."}, status=status.HTTP_404_NOT_FOUND)
@@ -477,21 +479,27 @@ class UserViewSet(ModelViewSet):
 
         nurse_list = []
         for nurse in nurses:
-            # Get specialization in requested language
-            if nurse.nurse_specialization:
-                if language == 'kz':
-                    specialization = nurse.nurse_specialization.name_kz
-                elif language == 'en':
-                    specialization = nurse.nurse_specialization.name_en
-                else:
-                    specialization = nurse.nurse_specialization.name_ru
-            else:
-                specialization = nurse.nurse_type or "Специальность не указана"
+            nurse_profile = getattr(nurse, 'nurse_profile', None)
 
-            # Get clinic information if nurse has clinic
+            if not nurse_profile:
+                continue  # Skip nurses without profiles
+
+            # Get specialization in requested language from profile
+            specialization = "Специальность не указана"
+            if nurse_profile.specialization:
+                if language == 'kz':
+                    specialization = nurse_profile.specialization.name_kz
+                elif language == 'en':
+                    specialization = nurse_profile.specialization.name_en
+                else:
+                    specialization = nurse_profile.specialization.name_ru
+            elif nurse_profile.nurse_type:
+                specialization = nurse_profile.nurse_type
+
+            # Get clinic information from profile
             clinic_data = None
-            if nurse.clinic:
-                clinic = nurse.clinic
+            if nurse_profile.clinic:
+                clinic = nurse_profile.clinic
                 clinic_data = {
                     "id": clinic.id,
                     "name": clinic.name,
@@ -505,17 +513,17 @@ class UserViewSet(ModelViewSet):
                 "name": f"{nurse.first_name} {nurse.last_name}",
                 "email": nurse.email,
                 "nurse_type": specialization,
-                "availability_status": nurse.availability_status or 'offline',
-                "availability_note": nurse.availability_note or '',
+                "availability_status": nurse_profile.availability_status or 'offline',
+                "availability_note": nurse_profile.availability_note or '',
                 # Include clinic information
                 "clinic": clinic_data,
                 # Include additional specialization details
                 "specialization": {
-                    "id": nurse.nurse_specialization.id if nurse.nurse_specialization else None,
-                    "name_ru": nurse.nurse_specialization.name_ru if nurse.nurse_specialization else None,
-                    "name_kz": nurse.nurse_specialization.name_kz if nurse.nurse_specialization else None,
-                    "name_en": nurse.nurse_specialization.name_en if nurse.nurse_specialization else None,
-                } if nurse.nurse_specialization else None
+                    "id": nurse_profile.specialization.id if nurse_profile.specialization else None,
+                    "name_ru": nurse_profile.specialization.name_ru if nurse_profile.specialization else None,
+                    "name_kz": nurse_profile.specialization.name_kz if nurse_profile.specialization else None,
+                    "name_en": nurse_profile.specialization.name_en if nurse_profile.specialization else None,
+                } if nurse_profile.specialization else None
             })
 
         return Response({"nurses": nurse_list}, status=status.HTTP_200_OK)
