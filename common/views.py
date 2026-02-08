@@ -1847,6 +1847,18 @@ class PatientsViewSet(ViewSet):
 
             patients_data = []
             for patient in patients:
+                # Get patient profile data if it exists
+                citizenship = None
+                marital_status = None
+                profession = None
+                try:
+                    patient_profile = patient.patient_profile
+                    citizenship = patient_profile.citizenship
+                    marital_status = patient_profile.marital_status
+                    profession = patient_profile.profession
+                except:
+                    pass
+
                 patients_data.append({
                     'id': patient.id,
                     'first_name': patient.first_name,
@@ -1857,12 +1869,11 @@ class PatientsViewSet(ViewSet):
                     'gender': patient.gender,
                     'address': patient.address,
                     'city': patient.city,
+                    'citizenship': citizenship,
+                    'marital_status': marital_status,
+                    'profession': profession,
                     'is_active': patient.is_active,
-                    'created_at': patient.created_at.isoformat() if patient.created_at else None,
-                    'clinic': {
-                        'id': patient.clinic.id,
-                        'name': patient.clinic.name
-                    } if patient.clinic else None
+                    'created_at': patient.created_at.isoformat() if patient.created_at else None
                 })
 
             return Response(patients_data, status=status.HTTP_200_OK)
