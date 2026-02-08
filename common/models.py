@@ -1,6 +1,8 @@
 from django.db import models
-from django.contrib.auth.hashers import check_password, make_password
+from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
+from django.contrib.auth.hashers import make_password
 from django.contrib.auth.base_user import BaseUserManager
+from auditlog.registry import auditlog
 
 
 class UserManager(BaseUserManager):
@@ -75,7 +77,7 @@ class NurseSpecialization(BaseModel):
         verbose_name_plural = "Специализации медсестёр"
 
 
-class User(BaseModel):
+class User(AbstractBaseUser, PermissionsMixin, BaseModel):
     ROLE_CHOICES = [
         ('patient', 'Пациент'),
         ('doctor', 'Доктор'),
@@ -129,60 +131,67 @@ class User(BaseModel):
         ('none', 'Отсутствует'),
     ]
 
-    # Основные поля
-    email = models.EmailField(unique=True, verbose_name="Email")
-    phone = models.CharField(max_length=15, unique=True, null=True, blank=True, verbose_name="Телефон")
-    password = models.CharField(max_length=255, verbose_name="Пароль")  # ✅ Must store hashed passwords!
+    # Основные поля (password provided by AbstractBaseUser)
+    email = models.EmailField(unique=True, db_index=True, verbose_name="Email")
+    phone = models.CharField(max_length=15, unique=True, null=True, blank=True, db_index=True, verbose_name="Телефон")
     first_name = models.CharField(max_length=150, null=True, blank=True, verbose_name="Имя")
     last_name = models.CharField(max_length=150, null=True, blank=True, verbose_name="Фамилия")
     is_active = models.BooleanField(default=True, verbose_name="Активен")
     reset_code = models.CharField(max_length=10, blank=True, null=True)
     reset_code_created_at = models.DateTimeField(null=True, blank=True)
     is_staff = models.BooleanField(default=False, verbose_name="Сотрудник")
-    is_superuser = models.BooleanField(default=False, verbose_name="Суперпользователь")
-    role = models.CharField(max_length=15, choices=ROLE_CHOICES, default='patient', verbose_name="Роль")
+    # is_superuser provided by PermissionsMixin
+    role = models.CharField(max_length=15, choices=ROLE_CHOICES, default='patient', db_index=True, verbose_name="Роль")
 
-    # Персональные данные для профиля
+    # Персональные данные для профиля (общие для всех пользователей)
     birth_date = models.DateField(null=True, blank=True, verbose_name="Дата рождения")
     gender = models.CharField(max_length=10, choices=GENDER_CHOICES, null=True, blank=True, verbose_name="Пол")
     address = models.TextField(null=True, blank=True, verbose_name="Адрес")
     city = models.CharField(max_length=100, null=True, blank=True, verbose_name="Город")
-    language = models.JSONField(null=True, blank=True, default=list, verbose_name="Языки")  # Changed to JSONField to support multiple languages
-    citizenship = models.CharField(max_length=100, default='Казахстан', null=True, blank=True, verbose_name="Гражданство")
-    marital_status = models.CharField(max_length=20, choices=MARITAL_STATUS_CHOICES, null=True, blank=True, verbose_name="Семейное положение")
-    profession = models.CharField(max_length=255, null=True, blank=True, verbose_name="Профессия")
+    language = models.JSONField(null=True, blank=True, default=list, verbose_name="Языки")
+    last_seen = models.DateTimeField(auto_now=True, verbose_name="Последний раз в сети")
 
-    # Медицинские данные
-    blood_type = models.CharField(max_length=5, choices=BLOOD_TYPE_CHOICES, null=True, blank=True, verbose_name="Группа крови")
-    rhesus_factor = models.CharField(max_length=10, choices=RHESUS_FACTOR_CHOICES, null=True, blank=True, verbose_name="Резус-фактор")
-    fluorography_status = models.CharField(max_length=20, choices=FLUOROGRAPHY_STATUS_CHOICES, null=True, blank=True, verbose_name="Статус флюорографии")
-    fluorography_date = models.DateField(null=True, blank=True, verbose_name="Дата флюорографии")
-    immunization_status = models.CharField(max_length=20, choices=IMMUNIZATION_STATUS_CHOICES, null=True, blank=True, verbose_name="Статус иммунизации")
-    immunization_date = models.DateField(null=True, blank=True, verbose_name="Дата последней иммунизации")
+    # Note: Role-specific fields have been moved to profile models:
+    # - Patient fields → PatientProfile (citizenship, marital_status, profession)
+    # - Medical data → PatientMedicalProfile (blood_type, rhesus_factor, etc.)
+    # - Doctor fields → DoctorProfile (doctor_type, specializations, clinic, availability)
+    # - Nurse fields → NurseProfile (nurse_type, specializations, clinic, availability)
 
-    # Врачебные поля
-    doctor_type = models.CharField(max_length=150, null=True, blank=True, verbose_name="Тип врача")
-    doctor_specialization = models.ForeignKey('DoctorSpecialization', on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Специализация врача (основная)")
-    # ManyToMany for multiple specializations
-    doctor_specializations = models.ManyToManyField('DoctorSpecialization', blank=True, related_name='doctors', verbose_name="Специализации врача")
+    # Django authentication requirements
+    USERNAME_FIELD = 'email'
+    REQUIRED_FIELDS = ['first_name', 'last_name']
+    EMAIL_FIELD = 'email'
+    
+    objects = UserManager()
 
-    # Медсестринские поля
-    nurse_type = models.CharField(max_length=150, null=True, blank=True, verbose_name="Тип медсестры")
-    nurse_specialization = models.ForeignKey('NurseSpecialization', on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Специализация медсестры (основная)")
-    # ManyToMany for multiple specializations
-    nurse_specializations = models.ManyToManyField('NurseSpecialization', blank=True, related_name='nurses', verbose_name="Специализации медсестры")
+    # All authentication methods provided by AbstractBaseUser:
+    # - set_password(), check_password(), get_username()
+    # - is_authenticated, is_anonymous properties
 
-    # Клиника (для докторов и медсестер)
-    clinic = models.ForeignKey(
-        'clinics.Clinics',
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='staff_members',
-        verbose_name="Клиника"
-    )
+    # All permission methods provided by PermissionsMixin:
+    # - has_perm(), has_module_perms()
 
-    # Статус доступности для докторов и медсестёр
+    def __str__(self):
+        full_name = f"{self.first_name} {self.last_name}".strip()
+        return f"{full_name} ({self.email})" if full_name else self.email
+
+    class Meta:
+        db_table = "common_users"
+        verbose_name = "Пользователь"
+        verbose_name_plural = "Пользователи"
+        ordering = ["last_name", "first_name"]
+        indexes = [
+            models.Index(fields=['role', 'is_active']),
+            models.Index(fields=['email', 'role']),
+        ]
+
+
+
+class DoctorProfile(BaseModel):
+    """
+    Extended profile for doctors with practice information.
+    Moved from User model in Phase 3 refactoring.
+    """
     AVAILABILITY_CHOICES = [
         ('available', 'Доступен'),
         ('busy', 'Занят'),
@@ -190,6 +199,56 @@ class User(BaseModel):
         ('break', 'На перерыве'),
     ]
 
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name='doctor_profile',
+        limit_choices_to={'role': 'doctor'}
+    )
+
+    # Doctor type and specializations
+    doctor_type = models.CharField(
+        max_length=150,
+        null=True,
+        blank=True,
+        verbose_name="Тип врача"
+    )
+    specialization = models.ForeignKey(
+        DoctorSpecialization,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name="Основная специализация"
+    )
+    specializations = models.ManyToManyField(
+        DoctorSpecialization,
+        blank=True,
+        related_name='doctors_multi',
+        verbose_name="Все специализации"
+    )
+    years_of_experience = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="Опыт работы (лет)"
+    )
+
+    # Clinic assignment
+    clinic = models.ForeignKey(
+        'clinics.Clinics',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='primary_doctors',
+        verbose_name="Основная клиника"
+    )
+    additional_clinics = models.ManyToManyField(
+        'clinics.Clinics',
+        blank=True,
+        related_name='doctors',
+        verbose_name="Дополнительные клиники"
+    )
+
+    # Availability status
     availability_status = models.CharField(
         max_length=20,
         choices=AVAILABILITY_CHOICES,
@@ -204,121 +263,194 @@ class User(BaseModel):
         blank=True,
         verbose_name="Заметка о доступности"
     )
-    last_seen = models.DateTimeField(auto_now=True, verbose_name="Последний раз в сети")
 
-    # Django authentication requirements
-    USERNAME_FIELD = 'email'
-    REQUIRED_FIELDS = ['first_name', 'last_name']
-    EMAIL_FIELD = 'email'
-    
-    objects = UserManager()
-
-    def set_password(self, raw_password):
-        """Hashes and saves the password"""
-        self.password = make_password(raw_password)
-
-    def check_password(self, raw_password):
-        """Verifies the password"""
-        return check_password(raw_password, self.password)
-
-    @property
-    def is_authenticated(self):
-        """Custom property to check authentication status"""
-        return True
-
-    @property
-    def is_anonymous(self):
-        """Always return False for authenticated users"""
-        return False
-
-    def get_username(self):
-        """Return the username field value"""
-        return getattr(self, self.USERNAME_FIELD)
-
-    def has_perm(self, perm, obj=None):
-        """Check if user has specific permission"""
-        return self.is_superuser
-
-    def has_module_perms(self, app_label):
-        """Check if user has permissions for app"""
-        return self.is_superuser
-
-    def __str__(self):
-        return f"{self.email} - {self.get_role_display()}"
-
-    class Meta:
-        db_table = "common_users"
-        verbose_name = "Пользователь"
-        verbose_name_plural = "Пользователи"
-
-
-
-class DoctorProfile(BaseModel):
-    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='doctor_profile')
-    specialization = models.ForeignKey(DoctorSpecialization, on_delete=models.SET_NULL, null=True, blank=True)
-    years_of_experience = models.PositiveIntegerField(null=True, blank=True, verbose_name="Опыт работы (лет)")
-
-    offline_consultation_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Цена офлайн консультации")
-    online_consultation_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Цена онлайн консультации")
-    preferred_consultation_duration = models.PositiveIntegerField(null=True, blank=True, verbose_name="Длительность консультации (мин)")
-    work_schedule = models.JSONField(null=True, blank=True, verbose_name="Расписание работы (Онлайн)")  # For backward compatibility, now used for online consultations
-    online_work_schedule = models.JSONField(null=True, blank=True, verbose_name="Расписание работы (Онлайн консультации)")
-    offline_work_schedule = models.JSONField(null=True, blank=True, verbose_name="Расписание работы (Оффлайн консультации)")
-
-    # Additional clinics - can work in multiple locations
-    additional_clinics = models.ManyToManyField('clinics.Clinics', blank=True, related_name='doctors', verbose_name="Дополнительные клиники")
+    # Pricing and scheduling
+    offline_consultation_price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Цена офлайн консультации"
+    )
+    online_consultation_price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Цена онлайн консультации"
+    )
+    preferred_consultation_duration = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="Длительность консультации (мин)"
+    )
+    work_schedule = models.JSONField(
+        null=True,
+        blank=True,
+        verbose_name="Расписание работы (Онлайн)"
+    )
+    online_work_schedule = models.JSONField(
+        null=True,
+        blank=True,
+        verbose_name="Расписание работы (Онлайн консультации)"
+    )
+    offline_work_schedule = models.JSONField(
+        null=True,
+        blank=True,
+        verbose_name="Расписание работы (Оффлайн консультации)"
+    )
 
     @property
     def is_available_for_consultation(self):
         """Check if doctor is available for new consultations"""
-        return self.user.availability_status == 'available'
+        return self.availability_status == 'available'
 
     @property
     def availability_display(self):
         """Get display text for availability status"""
-        choices = dict(self.user.AVAILABILITY_CHOICES)
-        return choices.get(self.user.availability_status, 'Неизвестно') if self.user.availability_status else 'Неизвестно'
+        choices = dict(User.AVAILABILITY_CHOICES)
+        return choices.get(self.availability_status, 'Неизвестно') if self.availability_status else 'Неизвестно'
 
     def __str__(self):
-        clinic_info = f" ({self.user.clinic.name})" if self.user.clinic else " (Независимый)"
+        clinic_info = f" ({self.clinic.name})" if self.clinic else " (Независимый)"
         return f"{self.user.first_name} {self.user.last_name} - {self.specialization.name_ru if self.specialization else 'Без специализации'}{clinic_info}"
 
     class Meta:
+        db_table = "common_doctor_profiles"
         verbose_name = "Профиль доктора"
         verbose_name_plural = "Профили докторов"
 
 
 class NurseProfile(BaseModel):
-    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='nurse_profile')
-    specialization = models.ForeignKey(NurseSpecialization, on_delete=models.SET_NULL, null=True, blank=True)
-    years_of_experience = models.PositiveIntegerField(null=True, blank=True, verbose_name="Опыт работы (лет)")
+    """
+    Extended profile for nurses with practice information.
+    Moved from User model in Phase 3 refactoring.
+    """
+    AVAILABILITY_CHOICES = [
+        ('available', 'Доступен'),
+        ('busy', 'Занят'),
+        ('offline', 'Не работает'),
+        ('break', 'На перерыве'),
+    ]
 
-    offline_consultation_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Цена офлайн консультации")
-    online_consultation_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Цена онлайн консультации")
-    preferred_consultation_duration = models.PositiveIntegerField(null=True, blank=True, verbose_name="Длительность консультации (мин)")
-    work_schedule = models.JSONField(null=True, blank=True, verbose_name="Расписание работы (Онлайн)")  # For backward compatibility, now used for online consultations
-    online_work_schedule = models.JSONField(null=True, blank=True, verbose_name="Расписание работы (Онлайн консультации)")
-    offline_work_schedule = models.JSONField(null=True, blank=True, verbose_name="Расписание работы (Оффлайн консультации)")
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name='nurse_profile',
+        limit_choices_to={'role': 'nurse'}
+    )
 
-    # Additional clinics - can work in multiple locations
-    additional_clinics = models.ManyToManyField('clinics.Clinics', blank=True, related_name='nurses', verbose_name="Дополнительные клиники")
+    # Nurse type and specializations
+    nurse_type = models.CharField(
+        max_length=150,
+        null=True,
+        blank=True,
+        verbose_name="Тип медсестры"
+    )
+    specialization = models.ForeignKey(
+        NurseSpecialization,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name="Основная специализация"
+    )
+    specializations = models.ManyToManyField(
+        NurseSpecialization,
+        blank=True,
+        related_name='nurses_multi',
+        verbose_name="Все специализации"
+    )
+    years_of_experience = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="Опыт работы (лет)"
+    )
+
+    # Clinic assignment
+    clinic = models.ForeignKey(
+        'clinics.Clinics',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='primary_nurses',
+        verbose_name="Основная клиника"
+    )
+    additional_clinics = models.ManyToManyField(
+        'clinics.Clinics',
+        blank=True,
+        related_name='nurses',
+        verbose_name="Дополнительные клиники"
+    )
+
+    # Availability status
+    availability_status = models.CharField(
+        max_length=20,
+        choices=AVAILABILITY_CHOICES,
+        default='offline',
+        null=True,
+        blank=True,
+        verbose_name="Статус доступности"
+    )
+    availability_note = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        verbose_name="Заметка о доступности"
+    )
+
+    # Pricing and scheduling
+    offline_consultation_price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Цена офлайн консультации"
+    )
+    online_consultation_price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Цена онлайн консультации"
+    )
+    preferred_consultation_duration = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="Длительность консультации (мин)"
+    )
+    work_schedule = models.JSONField(
+        null=True,
+        blank=True,
+        verbose_name="Расписание работы (Онлайн)"
+    )
+    online_work_schedule = models.JSONField(
+        null=True,
+        blank=True,
+        verbose_name="Расписание работы (Онлайн консультации)"
+    )
+    offline_work_schedule = models.JSONField(
+        null=True,
+        blank=True,
+        verbose_name="Расписание работы (Оффлайн консультации)"
+    )
 
     @property
     def is_available_for_consultation(self):
         """Check if nurse is available for new consultations"""
-        return self.user.availability_status == 'available'
+        return self.availability_status == 'available'
 
     @property
     def availability_display(self):
         """Get display text for availability status"""
-        choices = dict(self.user.AVAILABILITY_CHOICES)
-        return choices.get(self.user.availability_status, 'Неизвестно') if self.user.availability_status else 'Неизвестно'
+        choices = dict(User.AVAILABILITY_CHOICES)
+        return choices.get(self.availability_status, 'Неизвестно') if self.availability_status else 'Неизвестно'
 
     def __str__(self):
-        clinic_info = f" ({self.user.clinic.name})" if self.user.clinic else " (Независимая)"
+        clinic_info = f" ({self.clinic.name})" if self.clinic else " (Независимая)"
         return f"{self.user.first_name} {self.user.last_name} - {self.specialization.name_ru if self.specialization else 'Без специализации'}{clinic_info}"
 
     class Meta:
+        db_table = "common_nurse_profiles"
         verbose_name = "Профиль медсестры"
         verbose_name_plural = "Профили медсестёр"
 
@@ -412,6 +544,256 @@ class UserSession(BaseModel):
 # Migration completed: 2025-12-05
 # - 52 tokens successfully migrated
 # - Old table 'common_authtoken' can be dropped manually if needed
+
+
+class PatientProfile(BaseModel):
+    """
+    Extended profile for patients with personal information.
+    Moved from User model in Phase 3 refactoring.
+    """
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name='patient_profile',
+        limit_choices_to={'role': 'patient'},
+        verbose_name="Пациент"
+    )
+
+    # Personal information
+    citizenship = models.CharField(
+        max_length=100,
+        default='Казахстан',
+        null=True,
+        blank=True,
+        verbose_name="Гражданство"
+    )
+    marital_status = models.CharField(
+        max_length=20,
+        choices=User.MARITAL_STATUS_CHOICES,
+        null=True,
+        blank=True,
+        verbose_name="Семейное положение"
+    )
+    profession = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        verbose_name="Профессия"
+    )
+
+    # Emergency contact
+    emergency_contact_name = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        verbose_name="Имя контакта для экстренных случаев"
+    )
+    emergency_contact_phone = models.CharField(
+        max_length=15,
+        null=True,
+        blank=True,
+        verbose_name="Телефон экстренного контакта"
+    )
+    emergency_contact_relationship = models.CharField(
+        max_length=100,
+        null=True,
+        blank=True,
+        verbose_name="Отношение экстренного контакта"
+    )
+
+    # Preferences
+    preferred_language = models.CharField(
+        max_length=10,
+        null=True,
+        blank=True,
+        verbose_name="Предпочитаемый язык"
+    )
+    communication_preferences = models.JSONField(
+        null=True,
+        blank=True,
+        default=dict,
+        verbose_name="Предпочтения связи"
+    )
+
+    def __str__(self):
+        return f"Patient Profile: {self.user.first_name} {self.user.last_name}"
+
+    class Meta:
+        db_table = "common_patient_profiles"
+        verbose_name = "Профиль пациента"
+        verbose_name_plural = "Профили пациентов"
+
+
+class PatientMedicalProfile(BaseModel):
+    """
+    Medical information for patients.
+    Separated from User model for:
+    - HIPAA/GDPR compliance with audit trail
+    - Better security and access control
+    - Easier to extend with medical documents
+    """
+
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name='medical_profile',
+        limit_choices_to={'role': 'patient'},
+        verbose_name="Пациент"
+    )
+
+    # Blood information
+    blood_type = models.CharField(
+        max_length=5,
+        choices=User.BLOOD_TYPE_CHOICES,
+        null=True,
+        blank=True,
+        verbose_name="Группа крови"
+    )
+    rhesus_factor = models.CharField(
+        max_length=10,
+        choices=User.RHESUS_FACTOR_CHOICES,
+        null=True,
+        blank=True,
+        verbose_name="Резус-фактор"
+    )
+
+    # Fluorography
+    fluorography_status = models.CharField(
+        max_length=20,
+        choices=User.FLUOROGRAPHY_STATUS_CHOICES,
+        null=True,
+        blank=True,
+        verbose_name="Статус флюорографии"
+    )
+    fluorography_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Дата флюорографии"
+    )
+
+    # Immunization
+    immunization_status = models.CharField(
+        max_length=20,
+        choices=User.IMMUNIZATION_STATUS_CHOICES,
+        null=True,
+        blank=True,
+        verbose_name="Статус иммунизации"
+    )
+    immunization_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Дата последней иммунизации"
+    )
+
+    # Audit tracking - who last modified this profile
+    last_modified_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='modified_medical_profiles',
+        verbose_name="Последнее изменение"
+    )
+
+    def __str__(self):
+        return f"Medical Profile - {self.user.first_name} {self.user.last_name}"
+
+    class Meta:
+        db_table = "common_patient_medical_profiles"
+        verbose_name = "Медицинский профиль пациента"
+        verbose_name_plural = "Медицинские профили пациентов"
+        permissions = [
+            ("view_own_medical_profile", "Can view own medical profile"),
+            ("view_patient_medical_profile", "Can view patient medical profiles"),
+            ("modify_patient_medical_profile", "Can modify patient medical profiles"),
+        ]
+
+
+# Register model for audit logging
+auditlog.register(PatientMedicalProfile)
+
+
+class AdminProfile(BaseModel):
+    """
+    Profile for administrators with clinic assignment and permissions.
+    Added in Phase 4+ to support clinic-specific admins.
+    """
+
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name='admin_profile',
+        limit_choices_to={'role': 'admin'},
+        verbose_name="Администратор"
+    )
+
+    # Clinic assignment (None = super admin, can see all clinics)
+    clinic = models.ForeignKey(
+        'clinics.Clinics',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='admins',
+        verbose_name="Клиника"
+    )
+
+    # Admin type/role within organization
+    admin_type = models.CharField(
+        max_length=50,
+        null=True,
+        blank=True,
+        choices=[
+            ('super', 'Супер администратор'),
+            ('clinic', 'Администратор клиники'),
+            ('manager', 'Менеджер'),
+        ],
+        default='clinic',
+        verbose_name="Тип администратора"
+    )
+
+    # Permissions and access level
+    can_manage_staff = models.BooleanField(
+        default=True,
+        verbose_name="Может управлять персоналом"
+    )
+    can_manage_patients = models.BooleanField(
+        default=True,
+        verbose_name="Может управлять пациентами"
+    )
+    can_view_reports = models.BooleanField(
+        default=True,
+        verbose_name="Может просматривать отчеты"
+    )
+    can_manage_settings = models.BooleanField(
+        default=False,
+        verbose_name="Может управлять настройками"
+    )
+
+    # Contact and notes
+    department = models.CharField(
+        max_length=100,
+        null=True,
+        blank=True,
+        verbose_name="Отдел"
+    )
+    notes = models.TextField(
+        null=True,
+        blank=True,
+        verbose_name="Заметки"
+    )
+
+    def __str__(self):
+        return f"Admin Profile: {self.user.first_name} {self.user.last_name}"
+
+    @property
+    def is_super_admin(self):
+        """Check if this admin has super admin privileges (no clinic restriction)"""
+        return self.clinic is None or self.admin_type == 'super'
+
+    class Meta:
+        db_table = "common_admin_profiles"
+        verbose_name = "Профиль администратора"
+        verbose_name_plural = "Профили администраторов"
 
 
 # class ClinicalProtocol(models.Model):

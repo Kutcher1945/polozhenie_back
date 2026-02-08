@@ -53,6 +53,7 @@ INSTALLED_APPS = [
     "rest_framework_simplejwt.token_blacklist",  # Token blacklist for revocation
     "corsheaders",  # For handling Cross-Origin Resource Sharing (CORS)
     "drf_spectacular",
+    "auditlog",  # Audit logging for compliance
     # Apps
     "common",  # Your custom app
     "appointments",
@@ -87,6 +88,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "auditlog.middleware.AuditlogMiddleware",  # Audit logging for compliance
 ]
 
 ROOT_URLCONF = "mchs_back.urls"

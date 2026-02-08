@@ -1,22 +1,23 @@
 from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.utils import timezone
-from .models import User, UserSession
+from .models import User, UserSession, PatientMedicalProfile
 
 
 class UserSerializer(serializers.ModelSerializer):
+    """
+    Basic user serializer with core authentication and profile fields.
+    Role-specific fields have been moved to dedicated profile models.
+    """
     role_display = serializers.SerializerMethodField()
     gender_display = serializers.SerializerMethodField()
     language_display = serializers.SerializerMethodField()
-    marital_status_display = serializers.SerializerMethodField()
-    blood_type_display = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = [
             "id", "first_name", "last_name", "phone", "email", "password", "role", "role_display",
-            "birth_date", "gender", "gender_display", "address", "city", "language", "language_display",
-            "citizenship", "marital_status", "marital_status_display", "profession", "blood_type", "blood_type_display"
+            "birth_date", "gender", "gender_display", "address", "city", "language", "language_display"
         ]
         extra_kwargs = {"password": {"write_only": True}}
 
@@ -27,13 +28,14 @@ class UserSerializer(serializers.ModelSerializer):
         return dict(User.GENDER_CHOICES).get(obj.gender, "Не указано") if obj.gender else "Не указано"
 
     def get_language_display(self, obj):
-        return dict(User.LANGUAGE_CHOICES).get(obj.language, "Не указано") if obj.language else "Не указано"
-
-    def get_marital_status_display(self, obj):
-        return dict(User.MARITAL_STATUS_CHOICES).get(obj.marital_status, "Не указано") if obj.marital_status else "Не указано"
-
-    def get_blood_type_display(self, obj):
-        return dict(User.BLOOD_TYPE_CHOICES).get(obj.blood_type, "Не указано") if obj.blood_type else "Не указано"
+        if not obj.language:
+            return "Не указано"
+        # Handle both list (JSONField) and string formats
+        if isinstance(obj.language, list):
+            choices_dict = dict(User.LANGUAGE_CHOICES)
+            return ", ".join([choices_dict.get(lang, lang) for lang in obj.language])
+        # Fallback for single string value
+        return dict(User.LANGUAGE_CHOICES).get(obj.language, "Не указано")
 
 
     def validate_email(self, value):
@@ -56,42 +58,117 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 class UserProfileSerializer(serializers.ModelSerializer):
-    """Serializer for user profile details."""
+    """
+    Comprehensive user profile serializer that pulls data from profile models based on role.
+    Dynamically includes role-specific fields from DoctorProfile, NurseProfile, PatientProfile, AdminProfile.
+    """
     role_display = serializers.SerializerMethodField()
     gender_display = serializers.SerializerMethodField()
     language_display = serializers.SerializerMethodField()
-    marital_status_display = serializers.SerializerMethodField()
-    blood_type_display = serializers.SerializerMethodField()
-    rhesus_factor_display = serializers.SerializerMethodField()
-    fluorography_status_display = serializers.SerializerMethodField()
-    immunization_status_display = serializers.SerializerMethodField()
-    availability_status_display = serializers.SerializerMethodField()
     date_joined = serializers.DateTimeField(source='created_at', read_only=True)
-    clinic = serializers.SerializerMethodField()
-    clinic_id = serializers.IntegerField(source='clinic.id', read_only=True, allow_null=True)
+
+    # Role-specific fields
+    profile_data = serializers.SerializerMethodField()
+    clinic = serializers.SerializerMethodField()  # For backward compatibility with frontend
 
     class Meta:
         model = User
         fields = [
             'id', 'first_name', 'last_name', 'phone', 'email', 'role', 'role_display',
             'birth_date', 'gender', 'gender_display', 'address', 'city',
-            'language', 'language_display', 'citizenship', 'marital_status',
-            'marital_status_display', 'profession', 'blood_type', 'blood_type_display',
-            'rhesus_factor', 'rhesus_factor_display', 'fluorography_status', 'fluorography_status_display',
-            'fluorography_date', 'immunization_status', 'immunization_status_display', 'immunization_date',
-            'availability_status', 'availability_status_display', 'availability_note', 'last_seen',
-            'date_joined', 'clinic', 'clinic_id'
+            'language', 'language_display', 'last_seen', 'date_joined',
+            'clinic', 'profile_data'
         ]
-        read_only_fields = ['email', 'role', 'date_joined', 'clinic', 'clinic_id']
+        read_only_fields = ['email', 'role', 'date_joined', 'clinic']
 
     def get_clinic(self, obj):
-        """Return clinic information if user has a clinic assigned."""
-        if obj.clinic:
-            return {
-                'id': obj.clinic.id,
-                'name': obj.clinic.name,
-                'address': obj.clinic.address if hasattr(obj.clinic, 'address') else None,
-            }
+        """
+        Return clinic information from the user's profile (doctor, nurse, or admin).
+        For backward compatibility with frontend expecting user.clinic.
+        """
+        try:
+            if obj.role == 'doctor' and hasattr(obj, 'doctor_profile'):
+                clinic = obj.doctor_profile.clinic
+            elif obj.role == 'nurse' and hasattr(obj, 'nurse_profile'):
+                clinic = obj.nurse_profile.clinic
+            elif obj.role == 'admin' and hasattr(obj, 'admin_profile'):
+                clinic = obj.admin_profile.clinic
+            else:
+                return None
+
+            if clinic:
+                return {
+                    'id': clinic.id,
+                    'name': clinic.name,
+                    'address': getattr(clinic, 'address', None),
+                    'city': getattr(clinic.city, 'name_ru', None) if hasattr(clinic, 'city') else None,
+                }
+            return None
+        except:
+            return None
+
+    def get_profile_data(self, obj):
+        """
+        Return role-specific profile data from the appropriate profile model.
+        """
+        if obj.role == 'doctor':
+            try:
+                profile = obj.doctor_profile
+                return {
+                    'doctor_type': profile.doctor_type,
+                    'clinic': {
+                        'id': profile.clinic.id,
+                        'name': profile.clinic.name,
+                    } if profile.clinic else None,
+                    'availability_status': profile.availability_status,
+                    'availability_note': profile.availability_note,
+                    'specialization': profile.specialization.name_ru if profile.specialization else None,
+                }
+            except:
+                return None
+        elif obj.role == 'nurse':
+            try:
+                profile = obj.nurse_profile
+                return {
+                    'nurse_type': profile.nurse_type,
+                    'clinic': {
+                        'id': profile.clinic.id,
+                        'name': profile.clinic.name,
+                    } if profile.clinic else None,
+                    'availability_status': profile.availability_status,
+                    'availability_note': profile.availability_note,
+                    'specialization': profile.specialization.name_ru if profile.specialization else None,
+                }
+            except:
+                return None
+        elif obj.role == 'patient':
+            try:
+                profile = obj.patient_profile
+                return {
+                    'citizenship': profile.citizenship,
+                    'marital_status': profile.marital_status,
+                    'profession': profile.profession,
+                }
+            except:
+                return None
+        elif obj.role == 'admin':
+            try:
+                profile = obj.admin_profile
+                return {
+                    'admin_type': profile.admin_type,
+                    'clinic': {
+                        'id': profile.clinic.id,
+                        'name': profile.clinic.name,
+                    } if profile.clinic else None,
+                    'is_super_admin': profile.is_super_admin,
+                    'can_manage_staff': profile.can_manage_staff,
+                    'can_manage_patients': profile.can_manage_patients,
+                    'can_view_reports': profile.can_view_reports,
+                    'can_manage_settings': profile.can_manage_settings,
+                    'department': profile.department,
+                }
+            except:
+                return None
         return None
 
     def get_role_display(self, obj):
@@ -101,25 +178,14 @@ class UserProfileSerializer(serializers.ModelSerializer):
         return dict(User.GENDER_CHOICES).get(obj.gender, "Не указано") if obj.gender else "Не указано"
 
     def get_language_display(self, obj):
-        return dict(User.LANGUAGE_CHOICES).get(obj.language, "Не указано") if obj.language else "Не указано"
-
-    def get_marital_status_display(self, obj):
-        return dict(User.MARITAL_STATUS_CHOICES).get(obj.marital_status, "Не указано") if obj.marital_status else "Не указано"
-
-    def get_blood_type_display(self, obj):
-        return dict(User.BLOOD_TYPE_CHOICES).get(obj.blood_type, "Не указано") if obj.blood_type else "Не указано"
-
-    def get_rhesus_factor_display(self, obj):
-        return dict(User.RHESUS_FACTOR_CHOICES).get(obj.rhesus_factor, "Не указан") if obj.rhesus_factor else "Не указан"
-
-    def get_fluorography_status_display(self, obj):
-        return dict(User.FLUOROGRAPHY_STATUS_CHOICES).get(obj.fluorography_status, "Не указана") if obj.fluorography_status else "Не указана"
-
-    def get_immunization_status_display(self, obj):
-        return dict(User.IMMUNIZATION_STATUS_CHOICES).get(obj.immunization_status, "Не указано") if obj.immunization_status else "Не указано"
-
-    def get_availability_status_display(self, obj):
-        return dict(User.AVAILABILITY_CHOICES).get(obj.availability_status, "Не указано") if obj.availability_status else "Не указано"
+        if not obj.language:
+            return "Не указано"
+        # Handle both list (JSONField) and string formats
+        if isinstance(obj.language, list):
+            choices_dict = dict(User.LANGUAGE_CHOICES)
+            return ", ".join([choices_dict.get(lang, lang) for lang in obj.language])
+        # Fallback for single string value
+        return dict(User.LANGUAGE_CHOICES).get(obj.language, "Не указано")
 
     def validate_birth_date(self, value):
         """Validate that birth date is not in the future and user is at least 1 year old."""
@@ -146,42 +212,6 @@ class UserProfileSerializer(serializers.ModelSerializer):
             if User.objects.filter(phone=value).exclude(id=user_id).exists():
                 raise serializers.ValidationError("Пользователь с таким номером телефона уже существует.")
         return value
-
-    def validate_first_name(self, value):
-        """Validate first name."""
-        if value and len(value.strip()) < 2:
-            raise serializers.ValidationError("Имя должно содержать минимум 2 символа.")
-        return value.strip() if value else value
-
-    def validate_last_name(self, value):
-        """Validate last name."""
-        if value and len(value.strip()) < 2:
-            raise serializers.ValidationError("Фамилия должна содержать минимум 2 символа.")
-        return value.strip() if value else value
-
-    def validate_address(self, value):
-        """Validate address."""
-        if value and len(value.strip()) < 5:
-            raise serializers.ValidationError("Адрес должен содержать минимум 5 символов.")
-        return value.strip() if value else value
-
-    def validate_city(self, value):
-        """Validate city name."""
-        if value and len(value.strip()) < 2:
-            raise serializers.ValidationError("Название города должно содержать минимум 2 символа.")
-        return value.strip() if value else value
-
-    def validate_profession(self, value):
-        """Validate profession."""
-        if value and len(value.strip()) < 2:
-            raise serializers.ValidationError("Профессия должна содержать минимум 2 символа.")
-        return value.strip() if value else value
-
-    def validate_citizenship(self, value):
-        """Validate citizenship."""
-        if value and len(value.strip()) < 2:
-            raise serializers.ValidationError("Гражданство должно содержать минимум 2 символа.")
-        return value.strip() if value else value
 
 
 class UserSessionSerializer(serializers.ModelSerializer):
@@ -317,3 +347,60 @@ def refresh_jwt_tokens(refresh_token_string):
         'access_token': str(new_access),
         'refresh_token': str(new_refresh),
     }
+
+
+class PatientMedicalProfileSerializer(serializers.ModelSerializer):
+    """
+    Serializer for patient medical information.
+    Includes display fields for better frontend presentation.
+    """
+    
+    blood_type_display = serializers.SerializerMethodField()
+    rhesus_factor_display = serializers.SerializerMethodField()
+    fluorography_status_display = serializers.SerializerMethodField()
+    immunization_status_display = serializers.SerializerMethodField()
+    patient_name = serializers.SerializerMethodField()
+    last_modified_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PatientMedicalProfile
+        fields = [
+            'id',
+            'user',
+            'patient_name',
+            'blood_type',
+            'blood_type_display',
+            'rhesus_factor',
+            'rhesus_factor_display',
+            'fluorography_status',
+            'fluorography_status_display',
+            'fluorography_date',
+            'immunization_status',
+            'immunization_status_display',
+            'immunization_date',
+            'last_modified_by',
+            'last_modified_by_name',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at', 'last_modified_by']
+
+    def get_blood_type_display(self, obj):
+        return dict(User.BLOOD_TYPE_CHOICES).get(obj.blood_type, "Не указано") if obj.blood_type else "Не указано"
+
+    def get_rhesus_factor_display(self, obj):
+        return dict(User.RHESUS_FACTOR_CHOICES).get(obj.rhesus_factor, "Не указан") if obj.rhesus_factor else "Не указан"
+
+    def get_fluorography_status_display(self, obj):
+        return dict(User.FLUOROGRAPHY_STATUS_CHOICES).get(obj.fluorography_status, "Не указано") if obj.fluorography_status else "Не указано"
+
+    def get_immunization_status_display(self, obj):
+        return dict(User.IMMUNIZATION_STATUS_CHOICES).get(obj.immunization_status, "Не указано") if obj.immunization_status else "Не указано"
+
+    def get_patient_name(self, obj):
+        return f"{obj.user.first_name} {obj.user.last_name}".strip() or obj.user.email
+
+    def get_last_modified_by_name(self, obj):
+        if obj.last_modified_by:
+            return f"{obj.last_modified_by.first_name} {obj.last_modified_by.last_name}".strip() or obj.last_modified_by.email
+        return None

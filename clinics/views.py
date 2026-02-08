@@ -373,9 +373,18 @@ def clinic_stats(request):
         )
 
     try:
+        # Get admin profile to determine clinic access
+        from common.models import DoctorProfile, NurseProfile
+
+        admin_profile = None
+        try:
+            admin_profile = request.user.admin_profile
+        except:
+            pass
+
         # Determine if admin is clinic-specific or super admin
-        clinic_id = request.user.clinic_id
-        is_super_admin = clinic_id is None
+        is_super_admin = admin_profile is None or admin_profile.is_super_admin
+        clinic_id = admin_profile.clinic_id if admin_profile and admin_profile.clinic else None
 
         # Build base querysets with clinic filtering
         if is_super_admin:
@@ -386,14 +395,20 @@ def clinic_stats(request):
             clinic_filter = Q(is_deleted=False)
         else:
             # Clinic admin sees only their clinic's data
-            user_filter = Q(is_active=True, clinic_id=clinic_id)
-            consultation_filter = Q(doctor__clinic_id=clinic_id) | Q(patient__clinic_id=clinic_id)
-            appointment_filter = Q(patient__clinic_id=clinic_id)
+            # Filter by clinic on profile models (doctors/nurses) or user (patients)
+            user_filter = Q(is_active=True)
+            consultation_filter = Q(doctor__doctor_profile__clinic_id=clinic_id) | Q(patient__is_active=True)
+            appointment_filter = Q(patient__is_active=True)
             clinic_filter = Q(id=clinic_id, is_deleted=False)
 
-        # Get user statistics
-        total_doctors = User.objects.filter(user_filter, role='doctor').count()
-        total_nurses = User.objects.filter(user_filter, role='nurse').count()
+        # Get user statistics from profile models
+        if is_super_admin:
+            total_doctors = DoctorProfile.objects.filter(user__is_active=True).count()
+            total_nurses = NurseProfile.objects.filter(user__is_active=True).count()
+        else:
+            total_doctors = DoctorProfile.objects.filter(user__is_active=True, clinic_id=clinic_id).count()
+            total_nurses = NurseProfile.objects.filter(user__is_active=True, clinic_id=clinic_id).count()
+
         total_patients = User.objects.filter(user_filter, role='patient').count()
 
         # Get consultation statistics

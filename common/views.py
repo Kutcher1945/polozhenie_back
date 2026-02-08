@@ -12,11 +12,12 @@ from rest_framework import status
 from drf_yasg.utils import swagger_auto_schema
 from django.db.models import Q
 from django.contrib.auth.hashers import make_password
-from .models import User, DoctorSpecialization, NurseSpecialization, DoctorProfile, NurseProfile, UserSession
+from .models import User, DoctorSpecialization, NurseSpecialization, DoctorProfile, NurseProfile, UserSession, PatientMedicalProfile
 from rest_framework.authtoken.models import Token
 from rest_framework_simplejwt.tokens import RefreshToken
 from .serializers import (
     UserSerializer, UserProfileSerializer, UserSessionSerializer,
+    PatientMedicalProfileSerializer,
     create_jwt_tokens_for_user, refresh_jwt_tokens
 )
 from .permissions import IsDoctor, IsAdmin, IsNurse
@@ -389,12 +390,11 @@ class UserViewSet(ModelViewSet):
     @action(detail=False, methods=["get"], url_path="doctor/available")
     def get_available_doctors(self, request):
         """Fetch a list of available doctors."""
-        # Optimize query to avoid N+1 problem by prefetching specializations and clinic
-        # Show all active doctors (regardless of availability status for real-time updates)
+        # Optimize query to avoid N+1 problem by prefetching profile and related data
         doctors = User.objects.filter(
             role="doctor",
             is_active=True
-        ).select_related('doctor_specialization', 'clinic', 'clinic__city', 'doctor_profile')
+        ).select_related('doctor_profile', 'doctor_profile__clinic', 'doctor_profile__clinic__city', 'doctor_profile__specialization')
 
         if not doctors.exists():
             return Response({"error": "No available doctors found."}, status=status.HTTP_404_NOT_FOUND)
@@ -404,21 +404,27 @@ class UserViewSet(ModelViewSet):
 
         doctor_list = []
         for doctor in doctors:
-            # Get specialization in requested language
-            if doctor.doctor_specialization:
-                if language == 'kz':
-                    specialization = doctor.doctor_specialization.name_kz
-                elif language == 'en':
-                    specialization = doctor.doctor_specialization.name_en
-                else:
-                    specialization = doctor.doctor_specialization.name_ru
-            else:
-                specialization = doctor.doctor_type or "Специальность не указана"
+            doctor_profile = getattr(doctor, 'doctor_profile', None)
 
-            # Get clinic information if doctor has clinic
+            if not doctor_profile:
+                continue  # Skip doctors without profiles
+
+            # Get specialization in requested language from profile
+            specialization = "Специальность не указана"
+            if doctor_profile.specialization:
+                if language == 'kz':
+                    specialization = doctor_profile.specialization.name_kz
+                elif language == 'en':
+                    specialization = doctor_profile.specialization.name_en
+                else:
+                    specialization = doctor_profile.specialization.name_ru
+            elif doctor_profile.doctor_type:
+                specialization = doctor_profile.doctor_type
+
+            # Get clinic information from profile
             clinic_data = None
-            if doctor.clinic:
-                clinic = doctor.clinic
+            if doctor_profile.clinic:
+                clinic = doctor_profile.clinic
                 clinic_data = {
                     "id": clinic.id,
                     "name": clinic.name,
@@ -427,28 +433,26 @@ class UserViewSet(ModelViewSet):
                     "city": clinic.city.name_ru if clinic.city else None,
                 }
 
-            doctor_profile = getattr(doctor, 'doctor_profile', None)
-
             doctor_list.append({
                 "id": doctor.id,
                 "name": f"{doctor.first_name} {doctor.last_name}",
                 "email": doctor.email,
                 "doctor_type": specialization,
-                "availability_status": doctor.availability_status or 'offline',
-                "availability_note": doctor.availability_note or '',
+                "availability_status": doctor_profile.availability_status or 'offline',
+                "availability_note": doctor_profile.availability_note or '',
                 "language": doctor.language or 'ru',
-                "years_of_experience": doctor_profile.years_of_experience if doctor_profile else None,
-                "online_consultation_price": str(doctor_profile.online_consultation_price) if doctor_profile and doctor_profile.online_consultation_price else None,
-                "work_schedule": doctor_profile.work_schedule if doctor_profile else None,
+                "years_of_experience": doctor_profile.years_of_experience,
+                "online_consultation_price": str(doctor_profile.online_consultation_price) if doctor_profile.online_consultation_price else None,
+                "work_schedule": doctor_profile.work_schedule,
                 # Include clinic information
                 "clinic": clinic_data,
                 # Include additional specialization details
                 "specialization": {
-                    "id": doctor.doctor_specialization.id if doctor.doctor_specialization else None,
-                    "name_ru": doctor.doctor_specialization.name_ru if doctor.doctor_specialization else None,
-                    "name_kz": doctor.doctor_specialization.name_kz if doctor.doctor_specialization else None,
-                    "name_en": doctor.doctor_specialization.name_en if doctor.doctor_specialization else None,
-                } if doctor.doctor_specialization else None
+                    "id": doctor_profile.specialization.id if doctor_profile.specialization else None,
+                    "name_ru": doctor_profile.specialization.name_ru if doctor_profile.specialization else None,
+                    "name_kz": doctor_profile.specialization.name_kz if doctor_profile.specialization else None,
+                    "name_en": doctor_profile.specialization.name_en if doctor_profile.specialization else None,
+                } if doctor_profile.specialization else None
             })
 
         return Response({"doctors": doctor_list}, status=status.HTTP_200_OK)
@@ -461,12 +465,11 @@ class UserViewSet(ModelViewSet):
     @action(detail=False, methods=["get"], url_path="nurse/available")
     def get_available_nurses(self, request):
         """Fetch a list of available nurses."""
-        # Optimize query to avoid N+1 problem by prefetching specializations and clinic
-        # Show all active nurses (regardless of availability status for real-time updates)
+        # Optimize query to avoid N+1 problem by prefetching profile and related data
         nurses = User.objects.filter(
             role="nurse",
             is_active=True
-        ).select_related('nurse_specialization', 'clinic', 'clinic__city')
+        ).select_related('nurse_profile', 'nurse_profile__clinic', 'nurse_profile__clinic__city', 'nurse_profile__specialization')
 
         if not nurses.exists():
             return Response({"error": "No available nurses found."}, status=status.HTTP_404_NOT_FOUND)
@@ -476,21 +479,27 @@ class UserViewSet(ModelViewSet):
 
         nurse_list = []
         for nurse in nurses:
-            # Get specialization in requested language
-            if nurse.nurse_specialization:
-                if language == 'kz':
-                    specialization = nurse.nurse_specialization.name_kz
-                elif language == 'en':
-                    specialization = nurse.nurse_specialization.name_en
-                else:
-                    specialization = nurse.nurse_specialization.name_ru
-            else:
-                specialization = nurse.nurse_type or "Специальность не указана"
+            nurse_profile = getattr(nurse, 'nurse_profile', None)
 
-            # Get clinic information if nurse has clinic
+            if not nurse_profile:
+                continue  # Skip nurses without profiles
+
+            # Get specialization in requested language from profile
+            specialization = "Специальность не указана"
+            if nurse_profile.specialization:
+                if language == 'kz':
+                    specialization = nurse_profile.specialization.name_kz
+                elif language == 'en':
+                    specialization = nurse_profile.specialization.name_en
+                else:
+                    specialization = nurse_profile.specialization.name_ru
+            elif nurse_profile.nurse_type:
+                specialization = nurse_profile.nurse_type
+
+            # Get clinic information from profile
             clinic_data = None
-            if nurse.clinic:
-                clinic = nurse.clinic
+            if nurse_profile.clinic:
+                clinic = nurse_profile.clinic
                 clinic_data = {
                     "id": clinic.id,
                     "name": clinic.name,
@@ -504,17 +513,17 @@ class UserViewSet(ModelViewSet):
                 "name": f"{nurse.first_name} {nurse.last_name}",
                 "email": nurse.email,
                 "nurse_type": specialization,
-                "availability_status": nurse.availability_status or 'offline',
-                "availability_note": nurse.availability_note or '',
+                "availability_status": nurse_profile.availability_status or 'offline',
+                "availability_note": nurse_profile.availability_note or '',
                 # Include clinic information
                 "clinic": clinic_data,
                 # Include additional specialization details
                 "specialization": {
-                    "id": nurse.nurse_specialization.id if nurse.nurse_specialization else None,
-                    "name_ru": nurse.nurse_specialization.name_ru if nurse.nurse_specialization else None,
-                    "name_kz": nurse.nurse_specialization.name_kz if nurse.nurse_specialization else None,
-                    "name_en": nurse.nurse_specialization.name_en if nurse.nurse_specialization else None,
-                } if nurse.nurse_specialization else None
+                    "id": nurse_profile.specialization.id if nurse_profile.specialization else None,
+                    "name_ru": nurse_profile.specialization.name_ru if nurse_profile.specialization else None,
+                    "name_kz": nurse_profile.specialization.name_kz if nurse_profile.specialization else None,
+                    "name_en": nurse_profile.specialization.name_en if nurse_profile.specialization else None,
+                } if nurse_profile.specialization else None
             })
 
         return Response({"nurses": nurse_list}, status=status.HTTP_200_OK)
@@ -1183,27 +1192,41 @@ class StaffViewSet(ViewSet):
         # Serialize staff data
         staff_data = []
         for member in staff:
-            # Get all specializations as comma-separated string
+            # Get all specializations and other data from profile models
             specialization = None
-            if member.role == 'doctor':
-                specs = list(member.doctor_specializations.values_list('name_ru', flat=True))
-                if specs:
-                    specialization = ', '.join(specs)
-                elif member.doctor_specialization:
-                    specialization = member.doctor_specialization.name_ru
-            elif member.role == 'nurse':
-                specs = list(member.nurse_specializations.values_list('name_ru', flat=True))
-                if specs:
-                    specialization = ', '.join(specs)
-                elif member.nurse_specialization:
-                    specialization = member.nurse_specialization.name_ru
+            clinic = None
+            availability_status = None
+            availability_note = None
 
-            # Get profile fields
-            profile = None
-            if member.role == 'doctor' and hasattr(member, 'doctor_profile'):
-                profile = member.doctor_profile
-            elif member.role == 'nurse' and hasattr(member, 'nurse_profile'):
-                profile = member.nurse_profile
+            if member.role == 'doctor':
+                try:
+                    profile = member.doctor_profile
+                    # Get specializations from profile
+                    specs = list(profile.specializations.values_list('name_ru', flat=True))
+                    if specs:
+                        specialization = ', '.join(specs)
+                    elif profile.specialization:
+                        specialization = profile.specialization.name_ru
+                    clinic = profile.clinic
+                    availability_status = profile.availability_status
+                    availability_note = profile.availability_note
+                except:
+                    profile = None
+
+            elif member.role == 'nurse':
+                try:
+                    profile = member.nurse_profile
+                    # Get specializations from profile
+                    specs = list(profile.specializations.values_list('name_ru', flat=True))
+                    if specs:
+                        specialization = ', '.join(specs)
+                    elif profile.specialization:
+                        specialization = profile.specialization.name_ru
+                    clinic = profile.clinic
+                    availability_status = profile.availability_status
+                    availability_note = profile.availability_note
+                except:
+                    profile = None
 
             staff_data.append({
                 'id': member.id,
@@ -1225,12 +1248,13 @@ class StaffViewSet(ViewSet):
                 'work_schedule': profile.work_schedule if profile else None,
                 'is_active': member.is_active,
                 'is_deleted': member.is_deleted,
-                'availability_status': member.availability_status,
+                'availability_status': availability_status,
+                'availability_note': availability_note,
                 'created_at': member.created_at.isoformat() if member.created_at else None,
                 'clinic': {
-                    'id': member.clinic.id,
-                    'name': member.clinic.name
-                } if member.clinic else None
+                    'id': clinic.id,
+                    'name': clinic.name
+                } if clinic else None
             })
 
         return Response(staff_data, status=status.HTTP_200_OK)
@@ -1333,7 +1357,7 @@ class StaffViewSet(ViewSet):
                         status=status.HTTP_400_BAD_REQUEST
                     )
 
-            # Create new staff member
+            # Create new staff member (User)
             new_staff = User.objects.create(
                 first_name=first_name,
                 last_name=last_name,
@@ -1346,8 +1370,7 @@ class StaffViewSet(ViewSet):
                 city=city if city else None,
                 language=language if language else 'ru',
                 is_active=True,
-                is_deleted=False,
-                clinic=clinic
+                is_deleted=False
             )
 
             # Set password (will be hashed automatically by set_password)
@@ -1355,12 +1378,12 @@ class StaffViewSet(ViewSet):
             new_staff.save()
 
             # Handle specializations (supports comma-separated multiple specializations)
+            specs = []
             if specialization:
                 # Split by comma and strip whitespace
                 spec_names = [s.strip() for s in specialization.split(',') if s.strip()]
 
                 if role == 'doctor':
-                    specs = []
                     for spec_name in spec_names:
                         # Try to find existing specialization by name_ru
                         spec = DoctorSpecialization.objects.filter(name_ru=spec_name).first()
@@ -1382,14 +1405,7 @@ class StaffViewSet(ViewSet):
                         if spec:
                             specs.append(spec)
 
-                    # Set primary specialization (first one) for backwards compatibility
-                    new_staff.doctor_specialization = specs[0] if specs else None
-                    new_staff.save()
-                    # Set all specializations in ManyToMany field
-                    new_staff.doctor_specializations.set(specs)
-
                 elif role == 'nurse':
-                    specs = []
                     for spec_name in spec_names:
                         # Try to find existing specialization by name_ru
                         spec = NurseSpecialization.objects.filter(name_ru=spec_name).first()
@@ -1411,30 +1427,46 @@ class StaffViewSet(ViewSet):
                         if spec:
                             specs.append(spec)
 
-                    # Set primary specialization (first one) for backwards compatibility
-                    new_staff.nurse_specialization = specs[0] if specs else None
-                    new_staff.save()
-                    # Set all specializations in ManyToMany field
-                    new_staff.nurse_specializations.set(specs)
-
-            # Create doctor/nurse profile
-            profile_defaults = {
-                'years_of_experience': int(years_of_experience) if years_of_experience else None,
-                'offline_consultation_price': offline_consultation_price if offline_consultation_price else None,
-                'online_consultation_price': online_consultation_price if online_consultation_price else None,
-                'preferred_consultation_duration': int(preferred_consultation_duration) if preferred_consultation_duration else None,
-                'work_schedule': work_schedule if work_schedule else None,
-            }
+            # Create profile based on role
             if role == 'doctor':
-                DoctorProfile.objects.update_or_create(user=new_staff, defaults=profile_defaults)
-            elif role == 'nurse':
-                NurseProfile.objects.update_or_create(user=new_staff, defaults=profile_defaults)
+                from common.models import DoctorProfile
+                doctor_profile = DoctorProfile.objects.create(
+                    user=new_staff,
+                    clinic=clinic,
+                    specialization=specs[0] if specs else None,
+                    years_of_experience=years_of_experience if years_of_experience else None,
+                    offline_consultation_price=offline_consultation_price if offline_consultation_price else None,
+                    online_consultation_price=online_consultation_price if online_consultation_price else None,
+                    preferred_consultation_duration=preferred_consultation_duration if preferred_consultation_duration else None,
+                    work_schedule=work_schedule if work_schedule else None,
+                    availability_status='offline'
+                )
+                # Set all specializations in M2M field
+                if specs:
+                    doctor_profile.specializations.set(specs)
 
-            # Get profile
+            elif role == 'nurse':
+                from common.models import NurseProfile
+                nurse_profile = NurseProfile.objects.create(
+                    user=new_staff,
+                    clinic=clinic,
+                    specialization=specs[0] if specs else None,
+                    years_of_experience=years_of_experience if years_of_experience else None,
+                    offline_consultation_price=offline_consultation_price if offline_consultation_price else None,
+                    online_consultation_price=online_consultation_price if online_consultation_price else None,
+                    preferred_consultation_duration=preferred_consultation_duration if preferred_consultation_duration else None,
+                    work_schedule=work_schedule if work_schedule else None,
+                    availability_status='offline'
+                )
+                # Set all specializations in M2M field
+                if specs:
+                    nurse_profile.specializations.set(specs)
+
+            # Get the created profile for response
             profile = None
-            if role == 'doctor' and hasattr(new_staff, 'doctor_profile'):
+            if role == 'doctor':
                 profile = new_staff.doctor_profile
-            elif role == 'nurse' and hasattr(new_staff, 'nurse_profile'):
+            elif role == 'nurse':
                 profile = new_staff.nurse_profile
 
             # Return created staff member data
@@ -1823,6 +1855,18 @@ class PatientsViewSet(ViewSet):
 
             patients_data = []
             for patient in patients:
+                # Get patient profile data if it exists
+                citizenship = None
+                marital_status = None
+                profession = None
+                try:
+                    patient_profile = patient.patient_profile
+                    citizenship = patient_profile.citizenship
+                    marital_status = patient_profile.marital_status
+                    profession = patient_profile.profession
+                except:
+                    pass
+
                 patients_data.append({
                     'id': patient.id,
                     'first_name': patient.first_name,
@@ -1833,12 +1877,11 @@ class PatientsViewSet(ViewSet):
                     'gender': patient.gender,
                     'address': patient.address,
                     'city': patient.city,
+                    'citizenship': citizenship,
+                    'marital_status': marital_status,
+                    'profession': profession,
                     'is_active': patient.is_active,
-                    'created_at': patient.created_at.isoformat() if patient.created_at else None,
-                    'clinic': {
-                        'id': patient.clinic.id,
-                        'name': patient.clinic.name
-                    } if patient.clinic else None
+                    'created_at': patient.created_at.isoformat() if patient.created_at else None
                 })
 
             return Response(patients_data, status=status.HTTP_200_OK)
@@ -2626,3 +2669,67 @@ class ScheduleViewSet(ViewSet):
             return Response({'status': new_status}, status=status.HTTP_200_OK)
 
         return Response({'error': 'Invalid event type'}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class PatientMedicalProfileViewSet(ModelViewSet):
+    """
+    API endpoint for patient medical profiles.
+    
+    Access control:
+    - Patients can only view/update their own medical profile
+    - Doctors can view their patients' medical profiles
+    - Admins can view all medical profiles
+    - Nurses can view patients' medical profiles
+    
+    All changes are automatically logged via django-auditlog.
+    """
+    serializer_class = PatientMedicalProfileSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        user = self.request.user
+        
+        # Patients can only see their own profile
+        if user.role == 'patient':
+            return PatientMedicalProfile.objects.filter(user=user)
+        
+        # Doctors and nurses can see all patient profiles
+        # TODO: In future, filter by actual doctor-patient relationships
+        elif user.role in ['doctor', 'nurse']:
+            return PatientMedicalProfile.objects.all()
+        
+        # Admins can see all profiles
+        elif user.role == 'admin':
+            return PatientMedicalProfile.objects.all()
+        
+        # Default: no access
+        return PatientMedicalProfile.objects.none()
+    
+    def perform_update(self, serializer):
+        """Track who modified the profile for audit purposes"""
+        serializer.save(last_modified_by=self.request.user)
+    
+    def perform_create(self, serializer):
+        """Track who created the profile"""
+        serializer.save(last_modified_by=self.request.user)
+    
+    @action(detail=False, methods=['get'], url_path='me')
+    def my_profile(self, request):
+        """
+        Get the authenticated patient's own medical profile.
+        Creates one if it doesn't exist.
+        """
+        if request.user.role != 'patient':
+            return Response(
+                {'error': 'Only patients have medical profiles'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Get or create medical profile
+        profile, created = PatientMedicalProfile.objects.get_or_create(
+            user=request.user,
+            defaults={'last_modified_by': request.user}
+        )
+        
+        serializer = self.get_serializer(profile)
+        return Response(serializer.data)
