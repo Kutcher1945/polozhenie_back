@@ -373,27 +373,24 @@ def clinic_stats(request):
         )
 
     try:
-        # Determine if admin is clinic-specific or super admin
-        clinic_id = request.user.clinic_id
-        is_super_admin = clinic_id is None
+        # NOTE: After Phase 4 refactoring, admins no longer have clinic_id on User model
+        # For now, all admins are treated as super admins (can see all clinics)
+        # TODO: Create AdminProfile model if clinic-specific admins are needed
+        is_super_admin = True
+        clinic_id = None
 
-        # Build base querysets with clinic filtering
-        if is_super_admin:
-            # Super admin sees all data
-            user_filter = Q(is_active=True)
-            consultation_filter = Q()
-            appointment_filter = Q()
-            clinic_filter = Q(is_deleted=False)
-        else:
-            # Clinic admin sees only their clinic's data
-            user_filter = Q(is_active=True, clinic_id=clinic_id)
-            consultation_filter = Q(doctor__clinic_id=clinic_id) | Q(patient__clinic_id=clinic_id)
-            appointment_filter = Q(patient__clinic_id=clinic_id)
-            clinic_filter = Q(id=clinic_id, is_deleted=False)
+        # Build base querysets - all admins see all data
+        user_filter = Q(is_active=True)
+        consultation_filter = Q()
+        appointment_filter = Q()
+        clinic_filter = Q(is_deleted=False)
 
-        # Get user statistics
-        total_doctors = User.objects.filter(user_filter, role='doctor').count()
-        total_nurses = User.objects.filter(user_filter, role='nurse').count()
+        # Get user statistics from profile models (since clinic is now on profiles)
+        from common.models import DoctorProfile, NurseProfile
+
+        # Count doctors and nurses from their profiles
+        total_doctors = DoctorProfile.objects.filter(user__is_active=True).count()
+        total_nurses = NurseProfile.objects.filter(user__is_active=True).count()
         total_patients = User.objects.filter(user_filter, role='patient').count()
 
         # Get consultation statistics
