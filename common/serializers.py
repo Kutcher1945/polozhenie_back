@@ -60,7 +60,7 @@ class UserSerializer(serializers.ModelSerializer):
 class UserProfileSerializer(serializers.ModelSerializer):
     """
     Comprehensive user profile serializer that pulls data from profile models based on role.
-    Dynamically includes role-specific fields from DoctorProfile, NurseProfile, or PatientProfile.
+    Dynamically includes role-specific fields from DoctorProfile, NurseProfile, PatientProfile, AdminProfile.
     """
     role_display = serializers.SerializerMethodField()
     gender_display = serializers.SerializerMethodField()
@@ -69,6 +69,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
 
     # Role-specific fields
     profile_data = serializers.SerializerMethodField()
+    clinic = serializers.SerializerMethodField()  # For backward compatibility with frontend
 
     class Meta:
         model = User
@@ -76,9 +77,35 @@ class UserProfileSerializer(serializers.ModelSerializer):
             'id', 'first_name', 'last_name', 'phone', 'email', 'role', 'role_display',
             'birth_date', 'gender', 'gender_display', 'address', 'city',
             'language', 'language_display', 'last_seen', 'date_joined',
-            'profile_data'
+            'clinic', 'profile_data'
         ]
-        read_only_fields = ['email', 'role', 'date_joined']
+        read_only_fields = ['email', 'role', 'date_joined', 'clinic']
+
+    def get_clinic(self, obj):
+        """
+        Return clinic information from the user's profile (doctor, nurse, or admin).
+        For backward compatibility with frontend expecting user.clinic.
+        """
+        try:
+            if obj.role == 'doctor' and hasattr(obj, 'doctor_profile'):
+                clinic = obj.doctor_profile.clinic
+            elif obj.role == 'nurse' and hasattr(obj, 'nurse_profile'):
+                clinic = obj.nurse_profile.clinic
+            elif obj.role == 'admin' and hasattr(obj, 'admin_profile'):
+                clinic = obj.admin_profile.clinic
+            else:
+                return None
+
+            if clinic:
+                return {
+                    'id': clinic.id,
+                    'name': clinic.name,
+                    'address': getattr(clinic, 'address', None),
+                    'city': getattr(clinic.city, 'name_ru', None) if hasattr(clinic, 'city') else None,
+                }
+            return None
+        except:
+            return None
 
     def get_profile_data(self, obj):
         """
@@ -121,6 +148,24 @@ class UserProfileSerializer(serializers.ModelSerializer):
                     'citizenship': profile.citizenship,
                     'marital_status': profile.marital_status,
                     'profession': profile.profession,
+                }
+            except:
+                return None
+        elif obj.role == 'admin':
+            try:
+                profile = obj.admin_profile
+                return {
+                    'admin_type': profile.admin_type,
+                    'clinic': {
+                        'id': profile.clinic.id,
+                        'name': profile.clinic.name,
+                    } if profile.clinic else None,
+                    'is_super_admin': profile.is_super_admin,
+                    'can_manage_staff': profile.can_manage_staff,
+                    'can_manage_patients': profile.can_manage_patients,
+                    'can_view_reports': profile.can_view_reports,
+                    'can_manage_settings': profile.can_manage_settings,
+                    'department': profile.department,
                 }
             except:
                 return None
