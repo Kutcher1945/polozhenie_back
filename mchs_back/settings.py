@@ -274,16 +274,16 @@ CHANNEL_LAYERS = {
 #     }
 # }
 
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.contrib.gis.db.backends.postgis',
-#         'NAME': 'core_db',
-#         'USER': 'core',
-#         'PASSWORD': '4HPzQt2HyU',
-#         'HOST': '10.100.200.151',
-#         'PORT': '5432',
-#     }
-# }
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.contrib.gis.db.backends.postgis',
+        'NAME': 'core_db',
+        'USER': 'core',
+        'PASSWORD': '4HPzQt2HyU',
+        'HOST': '10.100.200.151',
+        'PORT': '5432',
+    }
+}
 
 
 
@@ -319,16 +319,16 @@ CHANNEL_LAYERS = {
 
 MISTRAL_API_KEY="QqkMxELY0YVGkCx17Vya04Sq9nGvCahu"
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.contrib.gis.db.backends.postgis',
-        'NAME': 'zhancare_db',
-        'USER': 'zhancare',
-        'PASSWORD': '4HPzQt2HyU',
-        'HOST': 'localhost',
-        'PORT': '5432',
-    }
-}
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.contrib.gis.db.backends.postgis',
+#         'NAME': 'zhancare_db',
+#         'USER': 'zhancare',
+#         'PASSWORD': '4HPzQt2HyU',
+#         'HOST': 'localhost',
+#         'PORT': '5432',
+#     }
+# }
 
 LIVEKIT_URL="wss://zhancare-4yvomh3h.livekit.cloud"
 LIVEKIT_API_KEY="APIsH5RHgRW6vdD"
