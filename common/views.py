@@ -1184,27 +1184,41 @@ class StaffViewSet(ViewSet):
         # Serialize staff data
         staff_data = []
         for member in staff:
-            # Get all specializations as comma-separated string
+            # Get all specializations and other data from profile models
             specialization = None
-            if member.role == 'doctor':
-                specs = list(member.doctor_specializations.values_list('name_ru', flat=True))
-                if specs:
-                    specialization = ', '.join(specs)
-                elif member.doctor_specialization:
-                    specialization = member.doctor_specialization.name_ru
-            elif member.role == 'nurse':
-                specs = list(member.nurse_specializations.values_list('name_ru', flat=True))
-                if specs:
-                    specialization = ', '.join(specs)
-                elif member.nurse_specialization:
-                    specialization = member.nurse_specialization.name_ru
+            clinic = None
+            availability_status = None
+            availability_note = None
 
-            # Get profile fields
-            profile = None
-            if member.role == 'doctor' and hasattr(member, 'doctor_profile'):
-                profile = member.doctor_profile
-            elif member.role == 'nurse' and hasattr(member, 'nurse_profile'):
-                profile = member.nurse_profile
+            if member.role == 'doctor':
+                try:
+                    profile = member.doctor_profile
+                    # Get specializations from profile
+                    specs = list(profile.specializations.values_list('name_ru', flat=True))
+                    if specs:
+                        specialization = ', '.join(specs)
+                    elif profile.specialization:
+                        specialization = profile.specialization.name_ru
+                    clinic = profile.clinic
+                    availability_status = profile.availability_status
+                    availability_note = profile.availability_note
+                except:
+                    profile = None
+
+            elif member.role == 'nurse':
+                try:
+                    profile = member.nurse_profile
+                    # Get specializations from profile
+                    specs = list(profile.specializations.values_list('name_ru', flat=True))
+                    if specs:
+                        specialization = ', '.join(specs)
+                    elif profile.specialization:
+                        specialization = profile.specialization.name_ru
+                    clinic = profile.clinic
+                    availability_status = profile.availability_status
+                    availability_note = profile.availability_note
+                except:
+                    profile = None
 
             staff_data.append({
                 'id': member.id,
@@ -1226,12 +1240,13 @@ class StaffViewSet(ViewSet):
                 'work_schedule': profile.work_schedule if profile else None,
                 'is_active': member.is_active,
                 'is_deleted': member.is_deleted,
-                'availability_status': member.availability_status,
+                'availability_status': availability_status,
+                'availability_note': availability_note,
                 'created_at': member.created_at.isoformat() if member.created_at else None,
                 'clinic': {
-                    'id': member.clinic.id,
-                    'name': member.clinic.name
-                } if member.clinic else None
+                    'id': clinic.id,
+                    'name': clinic.name
+                } if clinic else None
             })
 
         return Response(staff_data, status=status.HTTP_200_OK)
@@ -1334,7 +1349,7 @@ class StaffViewSet(ViewSet):
                         status=status.HTTP_400_BAD_REQUEST
                     )
 
-            # Create new staff member
+            # Create new staff member (User)
             new_staff = User.objects.create(
                 first_name=first_name,
                 last_name=last_name,
@@ -1347,8 +1362,7 @@ class StaffViewSet(ViewSet):
                 city=city if city else None,
                 language=language if language else 'ru',
                 is_active=True,
-                is_deleted=False,
-                clinic=clinic
+                is_deleted=False
             )
 
             # Set password (will be hashed automatically by set_password)
@@ -1356,12 +1370,12 @@ class StaffViewSet(ViewSet):
             new_staff.save()
 
             # Handle specializations (supports comma-separated multiple specializations)
+            specs = []
             if specialization:
                 # Split by comma and strip whitespace
                 spec_names = [s.strip() for s in specialization.split(',') if s.strip()]
 
                 if role == 'doctor':
-                    specs = []
                     for spec_name in spec_names:
                         # Try to find existing specialization by name_ru
                         spec = DoctorSpecialization.objects.filter(name_ru=spec_name).first()
@@ -1383,14 +1397,7 @@ class StaffViewSet(ViewSet):
                         if spec:
                             specs.append(spec)
 
-                    # Set primary specialization (first one) for backwards compatibility
-                    new_staff.doctor_specialization = specs[0] if specs else None
-                    new_staff.save()
-                    # Set all specializations in ManyToMany field
-                    new_staff.doctor_specializations.set(specs)
-
                 elif role == 'nurse':
-                    specs = []
                     for spec_name in spec_names:
                         # Try to find existing specialization by name_ru
                         spec = NurseSpecialization.objects.filter(name_ru=spec_name).first()
@@ -1412,30 +1419,46 @@ class StaffViewSet(ViewSet):
                         if spec:
                             specs.append(spec)
 
-                    # Set primary specialization (first one) for backwards compatibility
-                    new_staff.nurse_specialization = specs[0] if specs else None
-                    new_staff.save()
-                    # Set all specializations in ManyToMany field
-                    new_staff.nurse_specializations.set(specs)
-
-            # Create doctor/nurse profile
-            profile_defaults = {
-                'years_of_experience': int(years_of_experience) if years_of_experience else None,
-                'offline_consultation_price': offline_consultation_price if offline_consultation_price else None,
-                'online_consultation_price': online_consultation_price if online_consultation_price else None,
-                'preferred_consultation_duration': int(preferred_consultation_duration) if preferred_consultation_duration else None,
-                'work_schedule': work_schedule if work_schedule else None,
-            }
+            # Create profile based on role
             if role == 'doctor':
-                DoctorProfile.objects.update_or_create(user=new_staff, defaults=profile_defaults)
-            elif role == 'nurse':
-                NurseProfile.objects.update_or_create(user=new_staff, defaults=profile_defaults)
+                from common.models import DoctorProfile
+                doctor_profile = DoctorProfile.objects.create(
+                    user=new_staff,
+                    clinic=clinic,
+                    specialization=specs[0] if specs else None,
+                    years_of_experience=years_of_experience if years_of_experience else None,
+                    offline_consultation_price=offline_consultation_price if offline_consultation_price else None,
+                    online_consultation_price=online_consultation_price if online_consultation_price else None,
+                    preferred_consultation_duration=preferred_consultation_duration if preferred_consultation_duration else None,
+                    work_schedule=work_schedule if work_schedule else None,
+                    availability_status='offline'
+                )
+                # Set all specializations in M2M field
+                if specs:
+                    doctor_profile.specializations.set(specs)
 
-            # Get profile
+            elif role == 'nurse':
+                from common.models import NurseProfile
+                nurse_profile = NurseProfile.objects.create(
+                    user=new_staff,
+                    clinic=clinic,
+                    specialization=specs[0] if specs else None,
+                    years_of_experience=years_of_experience if years_of_experience else None,
+                    offline_consultation_price=offline_consultation_price if offline_consultation_price else None,
+                    online_consultation_price=online_consultation_price if online_consultation_price else None,
+                    preferred_consultation_duration=preferred_consultation_duration if preferred_consultation_duration else None,
+                    work_schedule=work_schedule if work_schedule else None,
+                    availability_status='offline'
+                )
+                # Set all specializations in M2M field
+                if specs:
+                    nurse_profile.specializations.set(specs)
+
+            # Get the created profile for response
             profile = None
-            if role == 'doctor' and hasattr(new_staff, 'doctor_profile'):
+            if role == 'doctor':
                 profile = new_staff.doctor_profile
-            elif role == 'nurse' and hasattr(new_staff, 'nurse_profile'):
+            elif role == 'nurse':
                 profile = new_staff.nurse_profile
 
             # Return created staff member data
