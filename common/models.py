@@ -238,71 +238,255 @@ class User(AbstractBaseUser, PermissionsMixin, BaseModel):
 
 
 class DoctorProfile(BaseModel):
-    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='doctor_profile')
-    specialization = models.ForeignKey(DoctorSpecialization, on_delete=models.SET_NULL, null=True, blank=True)
-    years_of_experience = models.PositiveIntegerField(null=True, blank=True, verbose_name="Опыт работы (лет)")
+    """
+    Extended profile for doctors with practice information.
+    Moved from User model in Phase 3 refactoring.
+    """
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name='doctor_profile',
+        limit_choices_to={'role': 'doctor'}
+    )
 
-    offline_consultation_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Цена офлайн консультации")
-    online_consultation_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Цена онлайн консультации")
-    preferred_consultation_duration = models.PositiveIntegerField(null=True, blank=True, verbose_name="Длительность консультации (мин)")
-    work_schedule = models.JSONField(null=True, blank=True, verbose_name="Расписание работы (Онлайн)")  # For backward compatibility, now used for online consultations
-    online_work_schedule = models.JSONField(null=True, blank=True, verbose_name="Расписание работы (Онлайн консультации)")
-    offline_work_schedule = models.JSONField(null=True, blank=True, verbose_name="Расписание работы (Оффлайн консультации)")
+    # Doctor type and specializations
+    doctor_type = models.CharField(
+        max_length=150,
+        null=True,
+        blank=True,
+        verbose_name="Тип врача"
+    )
+    specialization = models.ForeignKey(
+        DoctorSpecialization,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name="Основная специализация"
+    )
+    specializations = models.ManyToManyField(
+        DoctorSpecialization,
+        blank=True,
+        related_name='doctors_multi',
+        verbose_name="Все специализации"
+    )
+    years_of_experience = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="Опыт работы (лет)"
+    )
 
-    # Additional clinics - can work in multiple locations
-    additional_clinics = models.ManyToManyField('clinics.Clinics', blank=True, related_name='doctors', verbose_name="Дополнительные клиники")
+    # Clinic assignment
+    clinic = models.ForeignKey(
+        'clinics.Clinics',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='primary_doctors',
+        verbose_name="Основная клиника"
+    )
+    additional_clinics = models.ManyToManyField(
+        'clinics.Clinics',
+        blank=True,
+        related_name='doctors',
+        verbose_name="Дополнительные клиники"
+    )
+
+    # Availability status
+    availability_status = models.CharField(
+        max_length=20,
+        choices=User.AVAILABILITY_CHOICES,
+        default='offline',
+        null=True,
+        blank=True,
+        verbose_name="Статус доступности"
+    )
+    availability_note = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        verbose_name="Заметка о доступности"
+    )
+
+    # Pricing and scheduling
+    offline_consultation_price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Цена офлайн консультации"
+    )
+    online_consultation_price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Цена онлайн консультации"
+    )
+    preferred_consultation_duration = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="Длительность консультации (мин)"
+    )
+    work_schedule = models.JSONField(
+        null=True,
+        blank=True,
+        verbose_name="Расписание работы (Онлайн)"
+    )
+    online_work_schedule = models.JSONField(
+        null=True,
+        blank=True,
+        verbose_name="Расписание работы (Онлайн консультации)"
+    )
+    offline_work_schedule = models.JSONField(
+        null=True,
+        blank=True,
+        verbose_name="Расписание работы (Оффлайн консультации)"
+    )
 
     @property
     def is_available_for_consultation(self):
         """Check if doctor is available for new consultations"""
-        return self.user.availability_status == 'available'
+        return self.availability_status == 'available'
 
     @property
     def availability_display(self):
         """Get display text for availability status"""
-        choices = dict(self.user.AVAILABILITY_CHOICES)
-        return choices.get(self.user.availability_status, 'Неизвестно') if self.user.availability_status else 'Неизвестно'
+        choices = dict(User.AVAILABILITY_CHOICES)
+        return choices.get(self.availability_status, 'Неизвестно') if self.availability_status else 'Неизвестно'
 
     def __str__(self):
-        clinic_info = f" ({self.user.clinic.name})" if self.user.clinic else " (Независимый)"
+        clinic_info = f" ({self.clinic.name})" if self.clinic else " (Независимый)"
         return f"{self.user.first_name} {self.user.last_name} - {self.specialization.name_ru if self.specialization else 'Без специализации'}{clinic_info}"
 
     class Meta:
+        db_table = "doctor_profiles"
         verbose_name = "Профиль доктора"
         verbose_name_plural = "Профили докторов"
 
 
 class NurseProfile(BaseModel):
-    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='nurse_profile')
-    specialization = models.ForeignKey(NurseSpecialization, on_delete=models.SET_NULL, null=True, blank=True)
-    years_of_experience = models.PositiveIntegerField(null=True, blank=True, verbose_name="Опыт работы (лет)")
+    """
+    Extended profile for nurses with practice information.
+    Moved from User model in Phase 3 refactoring.
+    """
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name='nurse_profile',
+        limit_choices_to={'role': 'nurse'}
+    )
 
-    offline_consultation_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Цена офлайн консультации")
-    online_consultation_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Цена онлайн консультации")
-    preferred_consultation_duration = models.PositiveIntegerField(null=True, blank=True, verbose_name="Длительность консультации (мин)")
-    work_schedule = models.JSONField(null=True, blank=True, verbose_name="Расписание работы (Онлайн)")  # For backward compatibility, now used for online consultations
-    online_work_schedule = models.JSONField(null=True, blank=True, verbose_name="Расписание работы (Онлайн консультации)")
-    offline_work_schedule = models.JSONField(null=True, blank=True, verbose_name="Расписание работы (Оффлайн консультации)")
+    # Nurse type and specializations
+    nurse_type = models.CharField(
+        max_length=150,
+        null=True,
+        blank=True,
+        verbose_name="Тип медсестры"
+    )
+    specialization = models.ForeignKey(
+        NurseSpecialization,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name="Основная специализация"
+    )
+    specializations = models.ManyToManyField(
+        NurseSpecialization,
+        blank=True,
+        related_name='nurses_multi',
+        verbose_name="Все специализации"
+    )
+    years_of_experience = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="Опыт работы (лет)"
+    )
 
-    # Additional clinics - can work in multiple locations
-    additional_clinics = models.ManyToManyField('clinics.Clinics', blank=True, related_name='nurses', verbose_name="Дополнительные клиники")
+    # Clinic assignment
+    clinic = models.ForeignKey(
+        'clinics.Clinics',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='primary_nurses',
+        verbose_name="Основная клиника"
+    )
+    additional_clinics = models.ManyToManyField(
+        'clinics.Clinics',
+        blank=True,
+        related_name='nurses',
+        verbose_name="Дополнительные клиники"
+    )
+
+    # Availability status
+    availability_status = models.CharField(
+        max_length=20,
+        choices=User.AVAILABILITY_CHOICES,
+        default='offline',
+        null=True,
+        blank=True,
+        verbose_name="Статус доступности"
+    )
+    availability_note = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        verbose_name="Заметка о доступности"
+    )
+
+    # Pricing and scheduling
+    offline_consultation_price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Цена офлайн консультации"
+    )
+    online_consultation_price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Цена онлайн консультации"
+    )
+    preferred_consultation_duration = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="Длительность консультации (мин)"
+    )
+    work_schedule = models.JSONField(
+        null=True,
+        blank=True,
+        verbose_name="Расписание работы (Онлайн)"
+    )
+    online_work_schedule = models.JSONField(
+        null=True,
+        blank=True,
+        verbose_name="Расписание работы (Онлайн консультации)"
+    )
+    offline_work_schedule = models.JSONField(
+        null=True,
+        blank=True,
+        verbose_name="Расписание работы (Оффлайн консультации)"
+    )
 
     @property
     def is_available_for_consultation(self):
         """Check if nurse is available for new consultations"""
-        return self.user.availability_status == 'available'
+        return self.availability_status == 'available'
 
     @property
     def availability_display(self):
         """Get display text for availability status"""
-        choices = dict(self.user.AVAILABILITY_CHOICES)
-        return choices.get(self.user.availability_status, 'Неизвестно') if self.user.availability_status else 'Неизвестно'
+        choices = dict(User.AVAILABILITY_CHOICES)
+        return choices.get(self.availability_status, 'Неизвестно') if self.availability_status else 'Неизвестно'
 
     def __str__(self):
-        clinic_info = f" ({self.user.clinic.name})" if self.user.clinic else " (Независимая)"
+        clinic_info = f" ({self.clinic.name})" if self.clinic else " (Независимая)"
         return f"{self.user.first_name} {self.user.last_name} - {self.specialization.name_ru if self.specialization else 'Без специализации'}{clinic_info}"
 
     class Meta:
+        db_table = "nurse_profiles"
         verbose_name = "Профиль медсестры"
         verbose_name_plural = "Профили медсестёр"
 
@@ -396,6 +580,84 @@ class UserSession(BaseModel):
 # Migration completed: 2025-12-05
 # - 52 tokens successfully migrated
 # - Old table 'common_authtoken' can be dropped manually if needed
+
+
+class PatientProfile(BaseModel):
+    """
+    Extended profile for patients with personal information.
+    Moved from User model in Phase 3 refactoring.
+    """
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name='patient_profile',
+        limit_choices_to={'role': 'patient'},
+        verbose_name="Пациент"
+    )
+
+    # Personal information
+    citizenship = models.CharField(
+        max_length=100,
+        default='Казахстан',
+        null=True,
+        blank=True,
+        verbose_name="Гражданство"
+    )
+    marital_status = models.CharField(
+        max_length=20,
+        choices=User.MARITAL_STATUS_CHOICES,
+        null=True,
+        blank=True,
+        verbose_name="Семейное положение"
+    )
+    profession = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        verbose_name="Профессия"
+    )
+
+    # Emergency contact
+    emergency_contact_name = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        verbose_name="Имя контакта для экстренных случаев"
+    )
+    emergency_contact_phone = models.CharField(
+        max_length=15,
+        null=True,
+        blank=True,
+        verbose_name="Телефон экстренного контакта"
+    )
+    emergency_contact_relationship = models.CharField(
+        max_length=100,
+        null=True,
+        blank=True,
+        verbose_name="Отношение экстренного контакта"
+    )
+
+    # Preferences
+    preferred_language = models.CharField(
+        max_length=10,
+        null=True,
+        blank=True,
+        verbose_name="Предпочитаемый язык"
+    )
+    communication_preferences = models.JSONField(
+        null=True,
+        blank=True,
+        default=dict,
+        verbose_name="Предпочтения связи"
+    )
+
+    def __str__(self):
+        return f"Patient Profile: {self.user.first_name} {self.user.last_name}"
+
+    class Meta:
+        db_table = "patient_profiles"
+        verbose_name = "Профиль пациента"
+        verbose_name_plural = "Профили пациентов"
 
 
 class PatientMedicalProfile(BaseModel):
