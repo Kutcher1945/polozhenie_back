@@ -316,7 +316,7 @@ class DoctorProfile(BaseModel):
         return f"{self.user.first_name} {self.user.last_name} - {self.specialization.name_ru if self.specialization else 'Без специализации'}{clinic_info}"
 
     class Meta:
-        db_table = "doctor_profiles"
+        db_table = "common_doctor_profiles"
         verbose_name = "Профиль доктора"
         verbose_name_plural = "Профили докторов"
 
@@ -450,7 +450,7 @@ class NurseProfile(BaseModel):
         return f"{self.user.first_name} {self.user.last_name} - {self.specialization.name_ru if self.specialization else 'Без специализации'}{clinic_info}"
 
     class Meta:
-        db_table = "nurse_profiles"
+        db_table = "common_nurse_profiles"
         verbose_name = "Профиль медсестры"
         verbose_name_plural = "Профили медсестёр"
 
@@ -619,7 +619,7 @@ class PatientProfile(BaseModel):
         return f"Patient Profile: {self.user.first_name} {self.user.last_name}"
 
     class Meta:
-        db_table = "patient_profiles"
+        db_table = "common_patient_profiles"
         verbose_name = "Профиль пациента"
         verbose_name_plural = "Профили пациентов"
 
@@ -699,7 +699,7 @@ class PatientMedicalProfile(BaseModel):
         return f"Medical Profile - {self.user.first_name} {self.user.last_name}"
 
     class Meta:
-        db_table = "patient_medical_profiles"
+        db_table = "common_patient_medical_profiles"
         verbose_name = "Медицинский профиль пациента"
         verbose_name_plural = "Медицинские профили пациентов"
         permissions = [
@@ -791,7 +791,7 @@ class AdminProfile(BaseModel):
         return self.clinic is None or self.admin_type == 'super'
 
     class Meta:
-        db_table = "admin_profiles"
+        db_table = "common_admin_profiles"
         verbose_name = "Профиль администратора"
         verbose_name_plural = "Профили администраторов"
 
