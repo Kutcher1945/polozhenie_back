@@ -23,6 +23,12 @@ db.sqlite3
 instance/
 .env
 
+# Database backups
+*.sql
+*.dump
+*.backup
+*.bak
+
 # Node.js
 node_modules/
 npm-debug.log
