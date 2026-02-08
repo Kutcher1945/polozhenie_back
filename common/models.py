@@ -143,69 +143,19 @@ class User(AbstractBaseUser, PermissionsMixin, BaseModel):
     # is_superuser provided by PermissionsMixin
     role = models.CharField(max_length=15, choices=ROLE_CHOICES, default='patient', db_index=True, verbose_name="Роль")
 
-    # Персональные данные для профиля
+    # Персональные данные для профиля (общие для всех пользователей)
     birth_date = models.DateField(null=True, blank=True, verbose_name="Дата рождения")
     gender = models.CharField(max_length=10, choices=GENDER_CHOICES, null=True, blank=True, verbose_name="Пол")
     address = models.TextField(null=True, blank=True, verbose_name="Адрес")
     city = models.CharField(max_length=100, null=True, blank=True, verbose_name="Город")
-    language = models.JSONField(null=True, blank=True, default=list, verbose_name="Языки")  # Changed to JSONField to support multiple languages
-    citizenship = models.CharField(max_length=100, default='Казахстан', null=True, blank=True, verbose_name="Гражданство")
-    marital_status = models.CharField(max_length=20, choices=MARITAL_STATUS_CHOICES, null=True, blank=True, verbose_name="Семейное положение")
-    profession = models.CharField(max_length=255, null=True, blank=True, verbose_name="Профессия")
-
-    # Медицинские данные
-    blood_type = models.CharField(max_length=5, choices=BLOOD_TYPE_CHOICES, null=True, blank=True, verbose_name="Группа крови")
-    rhesus_factor = models.CharField(max_length=10, choices=RHESUS_FACTOR_CHOICES, null=True, blank=True, verbose_name="Резус-фактор")
-    fluorography_status = models.CharField(max_length=20, choices=FLUOROGRAPHY_STATUS_CHOICES, null=True, blank=True, verbose_name="Статус флюорографии")
-    fluorography_date = models.DateField(null=True, blank=True, verbose_name="Дата флюорографии")
-    immunization_status = models.CharField(max_length=20, choices=IMMUNIZATION_STATUS_CHOICES, null=True, blank=True, verbose_name="Статус иммунизации")
-    immunization_date = models.DateField(null=True, blank=True, verbose_name="Дата последней иммунизации")
-
-    # Врачебные поля
-    doctor_type = models.CharField(max_length=150, null=True, blank=True, verbose_name="Тип врача")
-    doctor_specialization = models.ForeignKey('DoctorSpecialization', on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Специализация врача (основная)")
-    # ManyToMany for multiple specializations
-    doctor_specializations = models.ManyToManyField('DoctorSpecialization', blank=True, related_name='doctors', verbose_name="Специализации врача")
-
-    # Медсестринские поля
-    nurse_type = models.CharField(max_length=150, null=True, blank=True, verbose_name="Тип медсестры")
-    nurse_specialization = models.ForeignKey('NurseSpecialization', on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Специализация медсестры (основная)")
-    # ManyToMany for multiple specializations
-    nurse_specializations = models.ManyToManyField('NurseSpecialization', blank=True, related_name='nurses', verbose_name="Специализации медсестры")
-
-    # Клиника (для докторов и медсестер)
-    clinic = models.ForeignKey(
-        'clinics.Clinics',
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='staff_members',
-        verbose_name="Клиника"
-    )
-
-    # Статус доступности для докторов и медсестёр
-    AVAILABILITY_CHOICES = [
-        ('available', 'Доступен'),
-        ('busy', 'Занят'),
-        ('offline', 'Не работает'),
-        ('break', 'На перерыве'),
-    ]
-
-    availability_status = models.CharField(
-        max_length=20,
-        choices=AVAILABILITY_CHOICES,
-        default='offline',
-        null=True,
-        blank=True,
-        verbose_name="Статус доступности"
-    )
-    availability_note = models.CharField(
-        max_length=255,
-        null=True,
-        blank=True,
-        verbose_name="Заметка о доступности"
-    )
+    language = models.JSONField(null=True, blank=True, default=list, verbose_name="Языки")
     last_seen = models.DateTimeField(auto_now=True, verbose_name="Последний раз в сети")
+
+    # Note: Role-specific fields have been moved to profile models:
+    # - Patient fields → PatientProfile (citizenship, marital_status, profession)
+    # - Medical data → PatientMedicalProfile (blood_type, rhesus_factor, etc.)
+    # - Doctor fields → DoctorProfile (doctor_type, specializations, clinic, availability)
+    # - Nurse fields → NurseProfile (nurse_type, specializations, clinic, availability)
 
     # Django authentication requirements
     USERNAME_FIELD = 'email'
@@ -242,6 +192,13 @@ class DoctorProfile(BaseModel):
     Extended profile for doctors with practice information.
     Moved from User model in Phase 3 refactoring.
     """
+    AVAILABILITY_CHOICES = [
+        ('available', 'Доступен'),
+        ('busy', 'Занят'),
+        ('offline', 'Не работает'),
+        ('break', 'На перерыве'),
+    ]
+
     user = models.OneToOneField(
         User,
         on_delete=models.CASCADE,
@@ -294,7 +251,7 @@ class DoctorProfile(BaseModel):
     # Availability status
     availability_status = models.CharField(
         max_length=20,
-        choices=User.AVAILABILITY_CHOICES,
+        choices=AVAILABILITY_CHOICES,
         default='offline',
         null=True,
         blank=True,
@@ -369,6 +326,13 @@ class NurseProfile(BaseModel):
     Extended profile for nurses with practice information.
     Moved from User model in Phase 3 refactoring.
     """
+    AVAILABILITY_CHOICES = [
+        ('available', 'Доступен'),
+        ('busy', 'Занят'),
+        ('offline', 'Не работает'),
+        ('break', 'На перерыве'),
+    ]
+
     user = models.OneToOneField(
         User,
         on_delete=models.CASCADE,
@@ -421,7 +385,7 @@ class NurseProfile(BaseModel):
     # Availability status
     availability_status = models.CharField(
         max_length=20,
-        choices=User.AVAILABILITY_CHOICES,
+        choices=AVAILABILITY_CHOICES,
         default='offline',
         null=True,
         blank=True,
