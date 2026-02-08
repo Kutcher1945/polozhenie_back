@@ -713,6 +713,89 @@ class PatientMedicalProfile(BaseModel):
 auditlog.register(PatientMedicalProfile)
 
 
+class AdminProfile(BaseModel):
+    """
+    Profile for administrators with clinic assignment and permissions.
+    Added in Phase 4+ to support clinic-specific admins.
+    """
+
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name='admin_profile',
+        limit_choices_to={'role': 'admin'},
+        verbose_name="Администратор"
+    )
+
+    # Clinic assignment (None = super admin, can see all clinics)
+    clinic = models.ForeignKey(
+        'clinics.Clinics',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='admins',
+        verbose_name="Клиника"
+    )
+
+    # Admin type/role within organization
+    admin_type = models.CharField(
+        max_length=50,
+        null=True,
+        blank=True,
+        choices=[
+            ('super', 'Супер администратор'),
+            ('clinic', 'Администратор клиники'),
+            ('manager', 'Менеджер'),
+        ],
+        default='clinic',
+        verbose_name="Тип администратора"
+    )
+
+    # Permissions and access level
+    can_manage_staff = models.BooleanField(
+        default=True,
+        verbose_name="Может управлять персоналом"
+    )
+    can_manage_patients = models.BooleanField(
+        default=True,
+        verbose_name="Может управлять пациентами"
+    )
+    can_view_reports = models.BooleanField(
+        default=True,
+        verbose_name="Может просматривать отчеты"
+    )
+    can_manage_settings = models.BooleanField(
+        default=False,
+        verbose_name="Может управлять настройками"
+    )
+
+    # Contact and notes
+    department = models.CharField(
+        max_length=100,
+        null=True,
+        blank=True,
+        verbose_name="Отдел"
+    )
+    notes = models.TextField(
+        null=True,
+        blank=True,
+        verbose_name="Заметки"
+    )
+
+    def __str__(self):
+        return f"Admin Profile: {self.user.first_name} {self.user.last_name}"
+
+    @property
+    def is_super_admin(self):
+        """Check if this admin has super admin privileges (no clinic restriction)"""
+        return self.clinic is None or self.admin_type == 'super'
+
+    class Meta:
+        db_table = "admin_profiles"
+        verbose_name = "Профиль администратора"
+        verbose_name_plural = "Профили администраторов"
+
+
 # class ClinicalProtocol(models.Model):
 #     name = models.TextField()
 #     url = models.URLField(max_length=1000, unique=True)

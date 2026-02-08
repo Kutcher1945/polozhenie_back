@@ -373,24 +373,42 @@ def clinic_stats(request):
         )
 
     try:
-        # NOTE: After Phase 4 refactoring, admins no longer have clinic_id on User model
-        # For now, all admins are treated as super admins (can see all clinics)
-        # TODO: Create AdminProfile model if clinic-specific admins are needed
-        is_super_admin = True
-        clinic_id = None
-
-        # Build base querysets - all admins see all data
-        user_filter = Q(is_active=True)
-        consultation_filter = Q()
-        appointment_filter = Q()
-        clinic_filter = Q(is_deleted=False)
-
-        # Get user statistics from profile models (since clinic is now on profiles)
+        # Get admin profile to determine clinic access
         from common.models import DoctorProfile, NurseProfile
 
-        # Count doctors and nurses from their profiles
-        total_doctors = DoctorProfile.objects.filter(user__is_active=True).count()
-        total_nurses = NurseProfile.objects.filter(user__is_active=True).count()
+        admin_profile = None
+        try:
+            admin_profile = request.user.admin_profile
+        except:
+            pass
+
+        # Determine if admin is clinic-specific or super admin
+        is_super_admin = admin_profile is None or admin_profile.is_super_admin
+        clinic_id = admin_profile.clinic_id if admin_profile and admin_profile.clinic else None
+
+        # Build base querysets with clinic filtering
+        if is_super_admin:
+            # Super admin sees all data
+            user_filter = Q(is_active=True)
+            consultation_filter = Q()
+            appointment_filter = Q()
+            clinic_filter = Q(is_deleted=False)
+        else:
+            # Clinic admin sees only their clinic's data
+            # Filter by clinic on profile models (doctors/nurses) or user (patients)
+            user_filter = Q(is_active=True)
+            consultation_filter = Q(doctor__doctor_profile__clinic_id=clinic_id) | Q(patient__is_active=True)
+            appointment_filter = Q(patient__is_active=True)
+            clinic_filter = Q(id=clinic_id, is_deleted=False)
+
+        # Get user statistics from profile models
+        if is_super_admin:
+            total_doctors = DoctorProfile.objects.filter(user__is_active=True).count()
+            total_nurses = NurseProfile.objects.filter(user__is_active=True).count()
+        else:
+            total_doctors = DoctorProfile.objects.filter(user__is_active=True, clinic_id=clinic_id).count()
+            total_nurses = NurseProfile.objects.filter(user__is_active=True, clinic_id=clinic_id).count()
+
         total_patients = User.objects.filter(user_filter, role='patient').count()
 
         # Get consultation statistics
