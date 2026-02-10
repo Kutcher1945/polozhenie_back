@@ -643,10 +643,10 @@ class UserViewSet(ModelViewSet):
                     event_type = 'doctor_availability_changed'
                     user_id_key = 'doctor_id'
 
-                    # Get clinic information
+                    # Get clinic information from doctor profile
                     clinic_data = None
-                    if user.clinic:
-                        clinic = user.clinic
+                    if hasattr(user, 'doctor_profile') and user.doctor_profile and user.doctor_profile.clinic:
+                        clinic = user.doctor_profile.clinic
                         clinic_data = {
                             "id": clinic.id,
                             "name": clinic.name,
@@ -656,10 +656,12 @@ class UserViewSet(ModelViewSet):
                         }
 
                     # Get specialization
-                    if user.doctor_specialization:
-                        specialization = user.doctor_specialization.name_ru
+                    doctor_specialization = None
+                    if hasattr(user, 'doctor_profile') and user.doctor_profile and user.doctor_profile.specialization:
+                        doctor_specialization = user.doctor_profile.specialization
+                        specialization = doctor_specialization.name_ru
                     else:
-                        specialization = user.doctor_type or "Специальность не указана"
+                        specialization = "Специальность не указана"
 
                     # Full doctor data
                     full_data = {
@@ -671,20 +673,20 @@ class UserViewSet(ModelViewSet):
                         "availability_note": availability_note,
                         "clinic": clinic_data,
                         "specialization": {
-                            "id": user.doctor_specialization.id if user.doctor_specialization else None,
-                            "name_ru": user.doctor_specialization.name_ru if user.doctor_specialization else None,
-                            "name_kz": user.doctor_specialization.name_kz if user.doctor_specialization else None,
-                            "name_en": user.doctor_specialization.name_en if user.doctor_specialization else None,
-                        } if user.doctor_specialization else None
+                            "id": doctor_specialization.id if doctor_specialization else None,
+                            "name_ru": doctor_specialization.name_ru if doctor_specialization else None,
+                            "name_kz": doctor_specialization.name_kz if doctor_specialization else None,
+                            "name_en": doctor_specialization.name_en if doctor_specialization else None,
+                        } if doctor_specialization else None
                     }
                 else:  # nurse
                     event_type = 'nurse_availability_changed'
                     user_id_key = 'nurse_id'
 
-                    # Get clinic information
+                    # Get clinic information from nurse profile
                     clinic_data = None
-                    if user.clinic:
-                        clinic = user.clinic
+                    if hasattr(user, 'nurse_profile') and user.nurse_profile and user.nurse_profile.clinic:
+                        clinic = user.nurse_profile.clinic
                         clinic_data = {
                             "id": clinic.id,
                             "name": clinic.name,
@@ -694,10 +696,12 @@ class UserViewSet(ModelViewSet):
                         }
 
                     # Get specialization
-                    if user.nurse_specialization:
-                        specialization = user.nurse_specialization.name_ru
+                    nurse_specialization = None
+                    if hasattr(user, 'nurse_profile') and user.nurse_profile and user.nurse_profile.specialization:
+                        nurse_specialization = user.nurse_profile.specialization
+                        specialization = nurse_specialization.name_ru
                     else:
-                        specialization = user.nurse_type or "Специальность не указана"
+                        specialization = "Специальность не указана"
 
                     full_data = {
                         "id": user.id,
@@ -708,11 +712,11 @@ class UserViewSet(ModelViewSet):
                         "availability_note": availability_note,
                         "clinic": clinic_data,
                         "specialization": {
-                            "id": user.nurse_specialization.id if user.nurse_specialization else None,
-                            "name_ru": user.nurse_specialization.name_ru if user.nurse_specialization else None,
-                            "name_kz": user.nurse_specialization.name_kz if user.nurse_specialization else None,
-                            "name_en": user.nurse_specialization.name_en if user.nurse_specialization else None,
-                        } if user.nurse_specialization else None
+                            "id": nurse_specialization.id if nurse_specialization else None,
+                            "name_ru": nurse_specialization.name_ru if nurse_specialization else None,
+                            "name_kz": nurse_specialization.name_kz if nurse_specialization else None,
+                            "name_en": nurse_specialization.name_en if nurse_specialization else None,
+                        } if nurse_specialization else None
                     }
 
                 payload = {
@@ -1053,10 +1057,10 @@ class UserProfileViewSet(ViewSet):
                     event_type = 'doctor_availability_changed'
                     user_id_key = 'doctor_id'
 
-                    # Get clinic information
+                    # Get clinic information from doctor profile
                     clinic_data = None
-                    if user.clinic:
-                        clinic = user.clinic
+                    if hasattr(user, 'doctor_profile') and user.doctor_profile and user.doctor_profile.clinic:
+                        clinic = user.doctor_profile.clinic
                         clinic_data = {
                             "id": clinic.id,
                             "name": clinic.name,
@@ -1066,10 +1070,12 @@ class UserProfileViewSet(ViewSet):
                         }
 
                     # Get specialization
-                    if user.doctor_specialization:
-                        specialization = user.doctor_specialization.name_ru
+                    doctor_specialization = None
+                    if hasattr(user, 'doctor_profile') and user.doctor_profile and user.doctor_profile.specialization:
+                        doctor_specialization = user.doctor_profile.specialization
+                        specialization = doctor_specialization.name_ru
                     else:
-                        specialization = user.doctor_type or "Специальность не указана"
+                        specialization = "Специальность не указана"
 
                     # Full doctor data
                     full_data = {
@@ -1081,20 +1087,20 @@ class UserProfileViewSet(ViewSet):
                         "availability_note": availability_note,
                         "clinic": clinic_data,
                         "specialization": {
-                            "id": user.doctor_specialization.id if user.doctor_specialization else None,
-                            "name_ru": user.doctor_specialization.name_ru if user.doctor_specialization else None,
-                            "name_kz": user.doctor_specialization.name_kz if user.doctor_specialization else None,
-                            "name_en": user.doctor_specialization.name_en if user.doctor_specialization else None,
-                        } if user.doctor_specialization else None
+                            "id": doctor_specialization.id if doctor_specialization else None,
+                            "name_ru": doctor_specialization.name_ru if doctor_specialization else None,
+                            "name_kz": doctor_specialization.name_kz if doctor_specialization else None,
+                            "name_en": doctor_specialization.name_en if doctor_specialization else None,
+                        } if doctor_specialization else None
                     }
                 else:  # nurse
                     event_type = 'nurse_availability_changed'
                     user_id_key = 'nurse_id'
 
-                    # Get clinic information
+                    # Get clinic information from nurse profile
                     clinic_data = None
-                    if user.clinic:
-                        clinic = user.clinic
+                    if hasattr(user, 'nurse_profile') and user.nurse_profile and user.nurse_profile.clinic:
+                        clinic = user.nurse_profile.clinic
                         clinic_data = {
                             "id": clinic.id,
                             "name": clinic.name,
@@ -1104,10 +1110,12 @@ class UserProfileViewSet(ViewSet):
                         }
 
                     # Get specialization
-                    if user.nurse_specialization:
-                        specialization = user.nurse_specialization.name_ru
+                    nurse_specialization = None
+                    if hasattr(user, 'nurse_profile') and user.nurse_profile and user.nurse_profile.specialization:
+                        nurse_specialization = user.nurse_profile.specialization
+                        specialization = nurse_specialization.name_ru
                     else:
-                        specialization = user.nurse_type or "Специальность не указана"
+                        specialization = "Специальность не указана"
 
                     full_data = {
                         "id": user.id,
@@ -1118,11 +1126,11 @@ class UserProfileViewSet(ViewSet):
                         "availability_note": availability_note,
                         "clinic": clinic_data,
                         "specialization": {
-                            "id": user.nurse_specialization.id if user.nurse_specialization else None,
-                            "name_ru": user.nurse_specialization.name_ru if user.nurse_specialization else None,
-                            "name_kz": user.nurse_specialization.name_kz if user.nurse_specialization else None,
-                            "name_en": user.nurse_specialization.name_en if user.nurse_specialization else None,
-                        } if user.nurse_specialization else None
+                            "id": nurse_specialization.id if nurse_specialization else None,
+                            "name_ru": nurse_specialization.name_ru if nurse_specialization else None,
+                            "name_kz": nurse_specialization.name_kz if nurse_specialization else None,
+                            "name_en": nurse_specialization.name_en if nurse_specialization else None,
+                        } if nurse_specialization else None
                     }
 
                 payload = {
@@ -1173,21 +1181,36 @@ class StaffViewSet(ViewSet):
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        # Get clinic_id if admin is clinic-specific
-        clinic_id = request.user.clinic_id if hasattr(request.user, 'clinic_id') else None
+        # Get admin profile to determine clinic access
+        admin_profile = None
+        try:
+            admin_profile = request.user.admin_profile
+        except:
+            pass
+
+        is_super_admin = admin_profile is None or admin_profile.is_super_admin or (admin_profile and not admin_profile.clinic)
+        clinic_id = admin_profile.clinic_id if admin_profile and admin_profile.clinic else None
 
         # show_deleted=true returns only soft-deleted staff, otherwise only active
         show_deleted = request.query_params.get('show_deleted', 'false').lower() == 'true'
 
-        # Build query
-        base_filters = {
-            'role__in': ['doctor', 'nurse'],
-            'is_deleted': show_deleted,
-        }
-        if clinic_id:
-            base_filters['clinic_id'] = clinic_id
+        if is_super_admin:
+            # Super admin: see ALL staff (independent + clinic-assigned)
+            from .models import DoctorProfile, NurseProfile
 
-        staff = User.objects.filter(**base_filters)
+            # Get all doctors and nurses
+            doctor_users = User.objects.filter(role='doctor', is_deleted=show_deleted)
+            nurse_users = User.objects.filter(role='nurse', is_deleted=show_deleted)
+            staff = list(doctor_users) + list(nurse_users)
+        else:
+            # Clinic admin: see ONLY their clinic's staff
+            from .models import DoctorProfile, NurseProfile
+
+            # Get doctors and nurses from THIS clinic only
+            doctor_profiles = DoctorProfile.objects.filter(clinic_id=clinic_id, user__is_deleted=show_deleted).select_related('user')
+            nurse_profiles = NurseProfile.objects.filter(clinic_id=clinic_id, user__is_deleted=show_deleted).select_related('user')
+
+            staff = [dp.user for dp in doctor_profiles] + [np.user for np in nurse_profiles]
 
         # Serialize staff data
         staff_data = []
@@ -1334,17 +1357,22 @@ class StaffViewSet(ViewSet):
             )
 
         try:
-            # Determine clinic assignment
-            # Global admins (no clinic_id) can select clinic from request
-            # Clinic admins (have clinic_id) automatically assign to their clinic
-            admin_clinic_id = request.user.clinic_id if hasattr(request.user, 'clinic_id') else None
+            # Get admin profile to determine clinic access
+            admin_profile = None
+            try:
+                admin_profile = request.user.admin_profile
+            except:
+                pass
 
-            if admin_clinic_id:
-                # Clinic admin: use their clinic
-                clinic_id = admin_clinic_id
+            is_super_admin = admin_profile is None or admin_profile.is_super_admin or (admin_profile and not admin_profile.clinic)
+
+            # Determine clinic assignment
+            if is_super_admin:
+                # Super admin: can create independent staff OR assign to any clinic
+                clinic_id = request.data.get('clinic_id')  # Optional from request
             else:
-                # Global admin: use clinic from request (optional)
-                clinic_id = request.data.get('clinic_id')
+                # Clinic admin: must assign to their clinic
+                clinic_id = admin_profile.clinic_id
 
             clinic = None
             if clinic_id:
@@ -1520,8 +1548,22 @@ class StaffViewSet(ViewSet):
             staff_member = User.objects.get(id=pk, role__in=['doctor', 'nurse'])
 
             # Check if admin has permission to update this staff member
-            admin_clinic_id = request.user.clinic_id if hasattr(request.user, 'clinic_id') else None
-            if admin_clinic_id and staff_member.clinic_id != admin_clinic_id:
+            admin_profile = None
+            try:
+                admin_profile = request.user.admin_profile
+            except:
+                pass
+
+            admin_clinic_id = admin_profile.clinic_id if admin_profile and admin_profile.clinic else None
+
+            # Get staff member's clinic from their profile
+            staff_clinic_id = None
+            if staff_member.role == 'doctor' and hasattr(staff_member, 'doctor_profile') and staff_member.doctor_profile:
+                staff_clinic_id = staff_member.doctor_profile.clinic_id
+            elif staff_member.role == 'nurse' and hasattr(staff_member, 'nurse_profile') and staff_member.nurse_profile:
+                staff_clinic_id = staff_member.nurse_profile.clinic_id
+
+            if admin_clinic_id and staff_clinic_id != admin_clinic_id:
                 return Response(
                     {'error': 'У вас нет прав для изменения этого сотрудника'},
                     status=status.HTTP_403_FORBIDDEN
@@ -1613,14 +1655,13 @@ class StaffViewSet(ViewSet):
                             if spec:
                                 specs.append(spec)
 
-                        # Set primary specialization (first one) for backwards compatibility
-                        staff_member.doctor_specialization = specs[0] if specs else None
-                        staff_member.nurse_specialization = None
-                        # Save first to get ID for ManyToMany
+                        # Save user first to ensure profile exists
                         staff_member.save()
-                        # Set all specializations in ManyToMany field
-                        staff_member.doctor_specializations.set(specs)
-                        staff_member.nurse_specializations.clear()
+
+                        # Update DoctorProfile with primary specialization
+                        if hasattr(staff_member, 'doctor_profile'):
+                            staff_member.doctor_profile.specialization = specs[0] if specs else None
+                            staff_member.doctor_profile.save()
 
                     elif staff_member.role == 'nurse':
                         specs = []
@@ -1645,14 +1686,13 @@ class StaffViewSet(ViewSet):
                             if spec:
                                 specs.append(spec)
 
-                        # Set primary specialization (first one) for backwards compatibility
-                        staff_member.nurse_specialization = specs[0] if specs else None
-                        staff_member.doctor_specialization = None
-                        # Save first to get ID for ManyToMany
+                        # Save user first to ensure profile exists
                         staff_member.save()
-                        # Set all specializations in ManyToMany field
-                        staff_member.nurse_specializations.set(specs)
-                        staff_member.doctor_specializations.clear()
+
+                        # Update NurseProfile with primary specialization
+                        if hasattr(staff_member, 'nurse_profile'):
+                            staff_member.nurse_profile.specialization = specs[0] if specs else None
+                            staff_member.nurse_profile.save()
 
             # Update availability_status if provided
             if 'availability_status' in request.data:
@@ -1666,24 +1706,10 @@ class StaffViewSet(ViewSet):
             if 'is_deleted' in request.data:
                 staff_member.is_deleted = bool(request.data['is_deleted'])
 
-            # Update clinic if provided (only for global admins)
-            if 'clinic_id' in request.data and not admin_clinic_id:
-                clinic_id = request.data['clinic_id']
-                if clinic_id:
-                    from clinics.models import Clinics
-                    try:
-                        clinic = Clinics.objects.get(id=clinic_id)
-                        staff_member.clinic = clinic
-                    except Clinics.DoesNotExist:
-                        return Response(
-                            {'error': 'Клиника не найдена'},
-                            status=status.HTTP_400_BAD_REQUEST
-                        )
-
             staff_member.save()
 
             # Update profile fields if any are provided
-            profile_fields = ['years_of_experience', 'offline_consultation_price', 'online_consultation_price', 'preferred_consultation_duration', 'work_schedule']
+            profile_fields = ['years_of_experience', 'offline_consultation_price', 'online_consultation_price', 'preferred_consultation_duration', 'work_schedule', 'clinic_id']
             if any(f in request.data for f in profile_fields):
                 profile_defaults = {}
                 if 'years_of_experience' in request.data:
@@ -1702,6 +1728,22 @@ class StaffViewSet(ViewSet):
                     val = request.data['work_schedule']
                     profile_defaults['work_schedule'] = val if val else None
 
+                # Update clinic if provided (only for global admins)
+                if 'clinic_id' in request.data and not admin_clinic_id:
+                    clinic_id = request.data['clinic_id']
+                    if clinic_id:
+                        from clinics.models import Clinics
+                        try:
+                            clinic = Clinics.objects.get(id=clinic_id)
+                            profile_defaults['clinic'] = clinic
+                        except Clinics.DoesNotExist:
+                            return Response(
+                                {'error': 'Клиника не найдена'},
+                                status=status.HTTP_400_BAD_REQUEST
+                            )
+                    else:
+                        profile_defaults['clinic'] = None
+
                 if staff_member.role == 'doctor':
                     DoctorProfile.objects.update_or_create(user=staff_member, defaults=profile_defaults)
                 elif staff_member.role == 'nurse':
@@ -1710,17 +1752,11 @@ class StaffViewSet(ViewSet):
             # Get updated specializations for response (as comma-separated string)
             specialization = None
             if staff_member.role == 'doctor':
-                specs = list(staff_member.doctor_specializations.values_list('name_ru', flat=True))
-                if specs:
-                    specialization = ', '.join(specs)
-                elif staff_member.doctor_specialization:
-                    specialization = staff_member.doctor_specialization.name_ru
+                if hasattr(staff_member, 'doctor_profile') and staff_member.doctor_profile and staff_member.doctor_profile.specialization:
+                    specialization = staff_member.doctor_profile.specialization.name_ru
             elif staff_member.role == 'nurse':
-                specs = list(staff_member.nurse_specializations.values_list('name_ru', flat=True))
-                if specs:
-                    specialization = ', '.join(specs)
-                elif staff_member.nurse_specialization:
-                    specialization = staff_member.nurse_specialization.name_ru
+                if hasattr(staff_member, 'nurse_profile') and staff_member.nurse_profile and staff_member.nurse_profile.specialization:
+                    specialization = staff_member.nurse_profile.specialization.name_ru
 
             # Get profile (refresh to pick up updates)
             staff_member.refresh_from_db()
@@ -1753,9 +1789,9 @@ class StaffViewSet(ViewSet):
                 'availability_status': staff_member.availability_status,
                 'created_at': staff_member.created_at.isoformat() if staff_member.created_at else None,
                 'clinic': {
-                    'id': staff_member.clinic.id,
-                    'name': staff_member.clinic.name
-                } if staff_member.clinic else None
+                    'id': profile.clinic.id,
+                    'name': profile.clinic.name
+                } if profile and profile.clinic else None
             }, status=status.HTTP_200_OK)
 
         except User.DoesNotExist:
@@ -1835,20 +1871,47 @@ class PatientsViewSet(ViewSet):
                     status=status.HTTP_403_FORBIDDEN
                 )
 
-            # Filter patients based on admin's clinic
-            clinic_id = request.user.clinic_id if hasattr(request.user, 'clinic_id') else None
-            show_all = request.query_params.get('all', 'false').lower() == 'true'
+            # Get admin profile to determine clinic access
+            admin_profile = None
+            try:
+                admin_profile = request.user.admin_profile
+            except:
+                pass
 
-            if clinic_id and not show_all:
-                # Clinic admin: filter by their clinic
+            is_super_admin = admin_profile is None or admin_profile.is_super_admin or (admin_profile and not admin_profile.clinic)
+            clinic_id = admin_profile.clinic_id if admin_profile and admin_profile.clinic else None
+
+            # Filter patients based on admin's access level
+            if is_super_admin:
+                # Super admin: see ALL patients (independent + clinic-assigned)
                 patients = User.objects.filter(
                     role='patient',
-                    clinic_id=clinic_id,
                     is_deleted=False
                 ).order_by('-created_at')
             else:
-                # Global admin or all=true: get all patients
+                # Clinic admin: see ONLY their clinic's patients
+                # Patients are associated with clinics through consultations/appointments
+                from consultations.models import Consultation
+                from appointments.models import HomeAppointment
+                from django.db.models import Q
+
+                # Get patients who have consultations with doctors from this clinic
+                # or appointments at this clinic
+                patient_ids_from_consultations = Consultation.objects.filter(
+                    doctor__doctor_profile__clinic_id=clinic_id
+                ).values_list('patient_id', flat=True).distinct()
+
+                patient_ids_from_appointments = HomeAppointment.objects.filter(
+                    Q(doctor__doctor_profile__clinic_id=clinic_id) |
+                    Q(nurse__nurse_profile__clinic_id=clinic_id)
+                ).values_list('patient_id', flat=True).distinct()
+
+                # Combine both sets of patient IDs
+                all_patient_ids = set(list(patient_ids_from_consultations) + list(patient_ids_from_appointments))
+
+                # Filter patients by these IDs
                 patients = User.objects.filter(
+                    id__in=all_patient_ids,
                     role='patient',
                     is_deleted=False
                 ).order_by('-created_at')
@@ -1941,15 +2004,23 @@ class PatientsViewSet(ViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            # Determine clinic assignment
-            admin_clinic_id = request.user.clinic_id if hasattr(request.user, 'clinic_id') else None
+            # Get admin profile to determine clinic access
+            admin_profile = None
+            try:
+                admin_profile = request.user.admin_profile
+            except:
+                pass
 
-            if admin_clinic_id:
-                # Clinic admin: use their clinic
-                clinic_id = admin_clinic_id
+            is_super_admin = admin_profile is None or admin_profile.is_super_admin or (admin_profile and not admin_profile.clinic)
+
+            # Determine clinic assignment
+            if is_super_admin:
+                # Super admin: can create independent patients OR assign to any clinic
+                clinic_id = request.data.get('clinic_id')  # Optional from request
             else:
-                # Global admin: use clinic from request (optional)
-                clinic_id = request.data.get('clinic_id')
+                # Clinic admin: NOTE - patients typically don't have direct clinic assignment
+                # This is a placeholder for future implementation
+                clinic_id = None  # Patients are assigned through consultations/appointments
 
             clinic = None
             if clinic_id:
@@ -2175,7 +2246,13 @@ class ReportsViewSet(ViewSet):
             )
 
         # Get clinic filter if admin is clinic-specific
-        clinic_id = request.user.clinic_id if hasattr(request.user, 'clinic_id') and request.user.clinic_id else None
+        admin_profile = None
+        try:
+            admin_profile = request.user.admin_profile
+        except:
+            pass
+
+        clinic_id = admin_profile.clinic_id if admin_profile and admin_profile.clinic else None
 
         # ==================== REVENUE REPORT ====================
         # Get payments for home appointments
@@ -2185,7 +2262,11 @@ class ReportsViewSet(ViewSet):
             created_at__date__lte=end_date
         )
         if clinic_id:
-            payments_query = payments_query.filter(appointment__patient__clinic_id=clinic_id)
+            # Filter by appointments where doctor or nurse belongs to the clinic
+            payments_query = payments_query.filter(
+                Q(appointment__doctor__doctor_profile__clinic_id=clinic_id) |
+                Q(appointment__nurse__nurse_profile__clinic_id=clinic_id)
+            )
 
         total_revenue = payments_query.aggregate(total=Sum('amount'))['total'] or 0
 
@@ -2222,7 +2303,7 @@ class ReportsViewSet(ViewSet):
         )
         if clinic_id:
             consultations_query = consultations_query.filter(
-                Q(patient__clinic_id=clinic_id) | Q(doctor__clinic_id=clinic_id)
+                doctor__doctor_profile__clinic_id=clinic_id
             )
 
         total_consultations = consultations_query.count()
@@ -2266,14 +2347,14 @@ class ReportsViewSet(ViewSet):
 
         # Consultations by specialization
         consultations_by_spec = consultations_query.values(
-            'doctor__doctor_specialization__name_ru'
+            'doctor__doctor_profile__specialization__name_ru'
         ).annotate(
             count=Count('id')
         ).order_by('-count')[:10]
 
         by_specialization = [
             {
-                'specialization': item['doctor__doctor_specialization__name_ru'] or 'Без специализации',
+                'specialization': item['doctor__doctor_profile__specialization__name_ru'] or 'Без специализации',
                 'count': item['count']
             }
             for item in consultations_by_spec
@@ -2287,7 +2368,7 @@ class ReportsViewSet(ViewSet):
         )
         if clinic_id:
             appointments_query = appointments_query.filter(
-                Q(patient__clinic_id=clinic_id) | Q(nurse__clinic_id=clinic_id)
+                Q(doctor__doctor_profile__clinic_id=clinic_id) | Q(nurse__nurse_profile__clinic_id=clinic_id)
             )
 
         total_appointments = appointments_query.count()
@@ -2335,7 +2416,21 @@ class ReportsViewSet(ViewSet):
             is_deleted=False
         )
         if clinic_id:
-            patients_query = patients_query.filter(clinic_id=clinic_id)
+            # Filter patients through consultations/appointments at the clinic
+            from consultations.models import Consultation
+            from appointments.models import HomeAppointment
+
+            patient_ids_from_consultations = Consultation.objects.filter(
+                doctor__doctor_profile__clinic_id=clinic_id
+            ).values_list('patient_id', flat=True).distinct()
+
+            patient_ids_from_appointments = HomeAppointment.objects.filter(
+                Q(doctor__doctor_profile__clinic_id=clinic_id) |
+                Q(nurse__nurse_profile__clinic_id=clinic_id)
+            ).values_list('patient_id', flat=True).distinct()
+
+            all_patient_ids = set(list(patient_ids_from_consultations) + list(patient_ids_from_appointments))
+            patients_query = patients_query.filter(id__in=all_patient_ids)
 
         total_patients = patients_query.count()
 
@@ -2467,16 +2562,23 @@ class ScheduleViewSet(ViewSet):
         from consultations.models import Consultation
         from appointments.models import HomeAppointment
 
-        clinic_id = request.user.clinic_id if hasattr(request.user, 'clinic_id') else None
+        # Get clinic filter if admin is clinic-specific
+        admin_profile = None
+        try:
+            admin_profile = request.user.admin_profile
+        except:
+            pass
+
+        clinic_id = admin_profile.clinic_id if admin_profile and admin_profile.clinic else None
 
         # Scheduled consultations (have scheduled_at)
         consultations = Consultation.objects.filter(
             scheduled_at__isnull=False,
             is_deleted=False
-        ).select_related('patient', 'doctor', 'doctor__doctor_specialization', 'timeslot')
+        ).select_related('patient', 'doctor', 'doctor__doctor_profile', 'timeslot')
 
         if clinic_id:
-            consultations = consultations.filter(doctor__clinic_id=clinic_id)
+            consultations = consultations.filter(doctor__doctor_profile__clinic_id=clinic_id)
 
         # Home appointments
         appointments = HomeAppointment.objects.filter(
@@ -2485,7 +2587,7 @@ class ScheduleViewSet(ViewSet):
 
         if clinic_id:
             appointments = appointments.filter(
-                Q(doctor__clinic_id=clinic_id) | Q(nurse__clinic_id=clinic_id)
+                Q(doctor__doctor_profile__clinic_id=clinic_id) | Q(nurse__nurse_profile__clinic_id=clinic_id)
             )
 
         events = []
@@ -2496,8 +2598,8 @@ class ScheduleViewSet(ViewSet):
                 duration = int((c.timeslot.end_time - c.timeslot.start_time).total_seconds() / 60)
 
             specialization = None
-            if c.doctor and hasattr(c.doctor, 'doctor_specialization') and c.doctor.doctor_specialization:
-                specialization = c.doctor.doctor_specialization.name_ru
+            if c.doctor and hasattr(c.doctor, 'doctor_profile') and c.doctor.doctor_profile and c.doctor.doctor_profile.specialization:
+                specialization = c.doctor.doctor_profile.specialization.name_ru
 
             events.append({
                 'id': f'consultation_{c.id}',
