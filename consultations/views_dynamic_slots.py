@@ -6,12 +6,17 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.conf import settings
 from datetime import datetime, timedelta
 from django.db import transaction
+import logging
 
 from .models import Consultation, AIRecommendationLog
 from .serializers import ConsultationSerializer
 from common.models import User
+from common.utils.email_utils import send_consultation_created_email
+
+logger = logging.getLogger(__name__)
 
 
 @api_view(['GET'])
@@ -194,6 +199,48 @@ def book_dynamic_slot(request):
         except Exception as create_error:
             print(f"❌ Error creating consultation: {create_error}")
             raise
+
+        # 📧 Send email notification to patient
+        print(f"📧 Attempting to send email notification...")
+        print(f"   Patient email: {request.user.email}")
+        print(f"   Access code: {consultation.access_code}")
+        print(f"   Scheduled at: {consultation.scheduled_at}")
+
+        try:
+            patient_name = f"{request.user.first_name} {request.user.last_name}".strip() or request.user.email.split("@")[0]
+            doctor_name = f"{doctor.first_name} {doctor.last_name}".strip() or "Врач"
+
+            # Build consultation link
+            consultation_link = f"{settings.FRONTEND_URL}/video-call/patient?meetingId={consultation.meeting_id}"
+
+            print(f"   Patient name: {patient_name}")
+            print(f"   Doctor name: {doctor_name}")
+            print(f"   Consultation link: {consultation_link}")
+            print(f"   Calling send_consultation_created_email()...")
+
+            send_consultation_created_email(
+                patient_email=request.user.email,
+                patient_name=patient_name,
+                doctor_name=doctor_name,
+                access_code=consultation.access_code,
+                consultation_link=consultation_link,
+                scheduled_at=consultation.scheduled_at
+            )
+
+            print(f"✅ Email sent successfully to {request.user.email}!")
+            logger.info(f"✅ Email sent to {request.user.email} for scheduled consultation {consultation.id}")
+        except Exception as email_error:
+            # Log error but don't fail the consultation creation
+            print(f"❌ EMAIL SENDING FAILED!")
+            print(f"   Error: {str(email_error)}")
+            print(f"   Error type: {type(email_error).__name__}")
+
+            import traceback
+            print(f"   Traceback:")
+            traceback.print_exc()
+
+            logger.error(f"❌ Failed to send email notification: {str(email_error)}")
+            logger.error(f"   Full traceback:", exc_info=True)
 
         print(f"🔄 Serializing consultation data...")
         consultation_data = ConsultationSerializer(consultation).data

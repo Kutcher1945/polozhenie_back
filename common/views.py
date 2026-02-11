@@ -2702,6 +2702,50 @@ class ScheduleViewSet(ViewSet):
                 session_notes=notes,
             )
 
+            # 📧 Send email notification to patient
+            print(f"📧 [ADMIN SCHEDULE] Attempting to send email notification...")
+            print(f"   Patient email: {patient.email}")
+            print(f"   Access code: {consultation.access_code}")
+            print(f"   Scheduled at: {consultation.scheduled_at}")
+
+            try:
+                from common.utils.email_utils import send_consultation_created_email
+
+                patient_name = f"{patient.first_name} {patient.last_name}".strip() or patient.email.split("@")[0]
+                doctor_name = f"{doctor.first_name} {doctor.last_name}".strip() or "Врач"
+
+                # Build consultation link
+                consultation_link = f"{settings.FRONTEND_URL}/video-call/patient?meetingId={consultation.meeting_id}"
+
+                print(f"   Patient name: {patient_name}")
+                print(f"   Doctor name: {doctor_name}")
+                print(f"   Consultation link: {consultation_link}")
+                print(f"   Calling send_consultation_created_email()...")
+
+                send_consultation_created_email(
+                    patient_email=patient.email,
+                    patient_name=patient_name,
+                    doctor_name=doctor_name,
+                    access_code=consultation.access_code,
+                    consultation_link=consultation_link,
+                    scheduled_at=consultation.scheduled_at
+                )
+
+                print(f"✅ Email sent successfully to {patient.email}!")
+                logger.info(f"✅ Email sent to {patient.email} for admin-created consultation {consultation.id}")
+            except Exception as email_error:
+                # Log error but don't fail the consultation creation
+                print(f"❌ [ADMIN SCHEDULE] EMAIL SENDING FAILED!")
+                print(f"   Error: {str(email_error)}")
+                print(f"   Error type: {type(email_error).__name__}")
+
+                import traceback
+                print(f"   Traceback:")
+                traceback.print_exc()
+
+                logger.error(f"❌ Failed to send email notification: {str(email_error)}")
+                logger.error(f"   Full traceback:", exc_info=True)
+
             return Response({'id': f'consultation_{consultation.id}'}, status=status.HTTP_201_CREATED)
 
         elif event_type == 'appointment':
