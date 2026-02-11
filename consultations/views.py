@@ -64,6 +64,52 @@ class ConsultationViewSet(ModelViewSet):
 
         return queryset
 
+    def list(self, request, *args, **kwargs):
+        """
+        Override list to add time-based access control for consultations
+        """
+        queryset = self.filter_queryset(self.get_queryset())
+
+        # ⏰ Time-based access control for patients
+        meeting_id = request.query_params.get('meeting_id')
+        if meeting_id and hasattr(request.user, 'role') and request.user.role == 'patient':
+            # Check if consultation is being accessed too early
+            consultation = queryset.first()
+
+            if consultation and consultation.scheduled_at:
+                from django.utils import timezone
+                from datetime import timedelta
+
+                scheduled_time = consultation.scheduled_at
+                now = timezone.now()
+                time_diff = scheduled_time - now
+
+                # Allow access 5 minutes before scheduled time (grace period)
+                grace_period = timedelta(minutes=5)
+
+                if time_diff > grace_period:
+                    # Format date in Russian
+                    months_ru = {
+                        1: 'января', 2: 'февраля', 3: 'марта', 4: 'апреля',
+                        5: 'мая', 6: 'июня', 7: 'июля', 8: 'августа',
+                        9: 'сентября', 10: 'октября', 11: 'ноября', 12: 'декабря'
+                    }
+
+                    scheduled_str = f"{scheduled_time.day} {months_ru[scheduled_time.month]} {scheduled_time.year}, {scheduled_time.strftime('%H:%M')}"
+
+                    return Response({
+                        'error': f'Консультация запланирована на {scheduled_str}.'
+                    }, status=status.HTTP_403_FORBIDDEN)
+
+        # Return normal list response
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
     # @action(detail=False, methods=["post"], url_path="start")
     # def start_consultation(self, request):
     #     """
