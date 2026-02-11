@@ -50,10 +50,19 @@ class ConsultationViewSet(ModelViewSet):
 
         print("🔍 DEBUG: User Role ->", getattr(user, "role", "No role found"))
 
+        # Start with base queryset filtered by user role
         if hasattr(user, "role") and user.role == "doctor":
-            return Consultation.objects.filter(doctor=user)
+            queryset = Consultation.objects.filter(doctor=user)
+        else:
+            queryset = Consultation.objects.filter(patient=user)
 
-        return Consultation.objects.filter(patient=user)
+        # ✅ Filter by meeting_id if provided in query params
+        meeting_id = self.request.query_params.get('meeting_id')
+        if meeting_id:
+            print(f"🔍 DEBUG: Filtering by meeting_id -> {meeting_id}")
+            queryset = queryset.filter(meeting_id=meeting_id)
+
+        return queryset
 
     # @action(detail=False, methods=["post"], url_path="start")
     # def start_consultation(self, request):

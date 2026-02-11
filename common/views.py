@@ -2,6 +2,7 @@ import logging
 from drf_yasg import openapi
 from django.conf import settings
 from django.utils import timezone
+from django.db import IntegrityError
 import random
 import string
 from rest_framework.permissions import IsAuthenticated
@@ -2682,14 +2683,23 @@ class ScheduleViewSet(ViewSet):
 
             end_dt = start_dt + timedelta(minutes=duration)
 
-            timeslot = TimeSlot.objects.create(
-                doctor=doctor,
-                start_time=start_dt,
-                end_time=end_dt,
-                is_available=False,
-                max_consultations=1,
-                booked_consultations=1,
-            )
+            try:
+                timeslot = TimeSlot.objects.create(
+                    doctor=doctor,
+                    start_time=start_dt,
+                    end_time=end_dt,
+                    is_available=False,
+                    max_consultations=1,
+                    booked_consultations=1,
+                )
+            except IntegrityError:
+                # Timeslot already exists for this doctor at this time
+                return Response(
+                    {
+                        'error': f'У доктора {doctor.first_name} {doctor.last_name} уже есть консультация в это время ({date_str} {time_str}). Пожалуйста, выберите другое время.'
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
             consultation = Consultation.objects.create(
                 patient=patient,
