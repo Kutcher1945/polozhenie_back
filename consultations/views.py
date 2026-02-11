@@ -1140,7 +1140,7 @@ class ConsultationViewSet(ModelViewSet):
     @action(detail=False, methods=["post"], url_path="verify-access-code", permission_classes=[AllowAny])
     def verify_access_code(self, request):
         """
-        Verify consultation access code and return consultation details
+        Verify consultation access code and authenticate the patient
         Allows unauthenticated access - public endpoint
 
         POST /api/v1/consultations/verify-access-code/
@@ -1148,9 +1148,12 @@ class ConsultationViewSet(ModelViewSet):
             "access_code": "ABC123"
         }
 
-        Returns consultation meeting_id, status, and basic details if code is valid
+        Returns JWT tokens and consultation details for authentication
         """
         try:
+            from rest_framework_simplejwt.tokens import RefreshToken
+            from datetime import timedelta
+
             access_code = request.data.get("access_code", "").strip().upper()
 
             if not access_code:
@@ -1169,7 +1172,7 @@ class ConsultationViewSet(ModelViewSet):
             # Find consultation with this access code
             try:
                 consultation = Consultation.objects.select_related(
-                    'patient', 'doctor', 'doctor__doctor_specialization'
+                    'patient', 'doctor', 'doctor__doctor_profile', 'doctor__doctor_profile__specialization'
                 ).get(access_code=access_code)
             except Consultation.DoesNotExist:
                 logger.warning(f"⚠️ Invalid access code attempted: {access_code}")
@@ -1179,38 +1182,63 @@ class ConsultationViewSet(ModelViewSet):
                 }, status=status.HTTP_404_NOT_FOUND)
 
             # Check if consultation is cancelled or missed
-            if consultation.status in ["cancelled", "missed"]:
+            active_statuses = ['pending', 'scheduled', 'ongoing', 'planned']
+            if consultation.status not in active_statuses:
                 return Response({
                     "success": False,
-                    "error": f"This consultation has been {consultation.status}",
+                    "error": f"This consultation is no longer active (status: {consultation.status})",
                     "status": consultation.status
                 }, status=status.HTTP_400_BAD_REQUEST)
 
+            # 🔐 Generate JWT tokens for the patient (authenticate them)
+            patient = consultation.patient
+            refresh = RefreshToken.for_user(patient)
+
+            # Set shorter token lifetime for consultation-specific use
+            refresh.access_token.set_exp(lifetime=timedelta(hours=3))
+
             # Build response with consultation details
             specialization = None
-            if consultation.doctor.doctor_specialization:
-                specialization = {
-                    "ru": consultation.doctor.doctor_specialization.name_ru,
-                    "en": consultation.doctor.doctor_specialization.name_en,
-                    "kz": consultation.doctor.doctor_specialization.name_kz
-                }
+            if hasattr(consultation.doctor, 'doctor_profile') and consultation.doctor.doctor_profile:
+                if consultation.doctor.doctor_profile.specialization:
+                    specialization = {
+                        "ru": consultation.doctor.doctor_profile.specialization.name_ru,
+                        "en": consultation.doctor.doctor_profile.specialization.name_en,
+                        "kz": consultation.doctor.doctor_profile.specialization.name_kz
+                    }
 
-            logger.info(f"✅ Access code verified: {access_code} for consultation {consultation.meeting_id}")
+            # Get client IP for audit logging
+            x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+            if x_forwarded_for:
+                client_ip = x_forwarded_for.split(',')[0]
+            else:
+                client_ip = request.META.get('REMOTE_ADDR', 'unknown')
+
+            logger.info(
+                f"✅ Access code verified and patient authenticated | "
+                f"access_code={access_code} | consultation_id={consultation.id} | "
+                f"patient_id={patient.id} | patient_email={patient.email} | "
+                f"meeting_id={consultation.meeting_id} | ip={client_ip}"
+            )
 
             return Response({
                 "success": True,
+                "access_token": str(refresh.access_token),
+                "refresh_token": str(refresh),
+                "user": {
+                    "id": patient.id,
+                    "email": patient.email,
+                    "first_name": patient.first_name,
+                    "last_name": patient.last_name,
+                    "role": patient.role
+                },
                 "consultation": {
                     "id": consultation.id,
                     "meeting_id": consultation.meeting_id,
+                    "access_code": consultation.access_code,
                     "status": consultation.status,
                     "is_urgent": consultation.is_urgent,
                     "scheduled_at": consultation.scheduled_at.isoformat() if consultation.scheduled_at else None,
-                    "patient": {
-                        "id": consultation.patient.id,
-                        "first_name": consultation.patient.first_name,
-                        "last_name": consultation.patient.last_name,
-                        "email": consultation.patient.email
-                    },
                     "doctor": {
                         "id": consultation.doctor.id,
                         "first_name": consultation.doctor.first_name,
@@ -1302,10 +1330,9 @@ class ConsultationViewSet(ModelViewSet):
             # This ensures only ONE request can authenticate, even if multiple hit simultaneously
             with transaction.atomic():
                 try:
-                    # select_for_update() locks the row until transaction completes
-                    consultation = Consultation.objects.select_for_update().select_related(
-                        'patient', 'doctor', 'doctor__doctor_specialization'
-                    ).get(
+                    # select_for_update() locks only the Consultation row
+                    # Can't use select_related with nullable joins (doctor_profile might not exist)
+                    consultation = Consultation.objects.select_for_update().get(
                         id=consultation_id,
                         patient_id=patient_id
                     )
@@ -1368,17 +1395,18 @@ class ConsultationViewSet(ModelViewSet):
 
             # Fetch consultation again for response (transaction is committed, row is unlocked)
             consultation_response = Consultation.objects.select_related(
-                'patient', 'doctor', 'doctor__doctor_specialization'
+                'patient', 'doctor', 'doctor__doctor_profile', 'doctor__doctor_profile__specialization'
             ).get(id=consultation_id)
 
             # Build response with consultation details and JWT tokens
             specialization = None
-            if consultation_response.doctor.doctor_specialization:
-                specialization = {
-                    "ru": consultation_response.doctor.doctor_specialization.name_ru,
-                    "en": consultation_response.doctor.doctor_specialization.name_en,
-                    "kz": consultation_response.doctor.doctor_specialization.name_kz
-                }
+            if hasattr(consultation_response.doctor, 'doctor_profile') and consultation_response.doctor.doctor_profile:
+                if consultation_response.doctor.doctor_profile.specialization:
+                    specialization = {
+                        "ru": consultation_response.doctor.doctor_profile.specialization.name_ru,
+                        "en": consultation_response.doctor.doctor_profile.specialization.name_en,
+                        "kz": consultation_response.doctor.doctor_profile.specialization.name_kz
+                    }
 
             return Response({
                 "success": True,

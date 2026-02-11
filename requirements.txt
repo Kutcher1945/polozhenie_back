@@ -38,3 +38,4 @@ geopy
 websockets
 aiogram
 django-auditlog
+python-dotenv

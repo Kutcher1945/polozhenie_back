@@ -12,9 +12,13 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 
 from pathlib import Path
 import os
+from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Load environment variables from .env file
+load_dotenv(os.path.join(BASE_DIR, '.env'))
 
 
 # Quick-start development settings - unsuitable for production
@@ -177,8 +181,11 @@ SIMPLE_JWT = {
 # Ensure wildcard (*) is NOT used together with specific origins
 CORS_ALLOW_ALL_ORIGINS = False
 
-# Frontend URL for email links
-FRONTEND_URL = "https://www.zhan.care"
+# Frontend URL for email links (magic link authentication)
+# Use environment variable for easy local development
+# Local: FRONTEND_URL=http://localhost:3000
+# Prod:  FRONTEND_URL=https://www.zhan.care
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'https://www.zhan.care')
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
