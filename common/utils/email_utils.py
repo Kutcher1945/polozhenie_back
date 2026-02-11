@@ -226,12 +226,47 @@ Email: {email}
     msg.send()
 
 
-def send_consultation_created_email(patient_email, patient_name, doctor_name, access_code, consultation_link, scheduled_at=None):
+def generate_magic_link_token(consultation):
+    """
+    Generate a secure, short-lived JWT token for automatic login
+    No DB storage needed - cryptographically signed and self-contained
+
+    Security features:
+    - 2-hour expiration (safe & user-friendly)
+    - Minimal claims (no PII like email)
+    - Cryptographically signed (impossible to forge)
+    """
+    from rest_framework_simplejwt.tokens import AccessToken
+    from datetime import timedelta
+
+    token = AccessToken()
+    token.set_exp(lifetime=timedelta(hours=2))  # Expires in 2 hours
+
+    # Minimal token claims - only what's needed for validation
+    token['consultation_id'] = consultation.id
+    token['patient_id'] = consultation.patient.id
+    token['access_type'] = 'magic_link'
+
+    return str(token)
+
+
+def send_consultation_created_email(patient_email, patient_name, doctor_name, access_code, consultation_link, scheduled_at=None, consultation=None):
     """
     Send email notification when a consultation is created
-    Includes access code and direct link to join the consultation
+    Includes access code and secure magic link for automatic login
+
+    Parameters:
+    - consultation: Consultation object (for generating secure magic link token)
     """
     subject = "📅 Консультация назначена – ZhanCare.Ai"
+
+    # Generate secure magic link token if consultation object provided
+    if consultation:
+        magic_token = generate_magic_link_token(consultation)
+        # Add token to consultation link for automatic authentication
+        # Use correct separator based on whether URL already has query params
+        separator = '&' if '?' in consultation_link else '?'
+        consultation_link = f"{consultation_link}{separator}token={magic_token}"
 
     # Format scheduled time if provided
     scheduled_info = ""

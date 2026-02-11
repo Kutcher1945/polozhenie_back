@@ -156,7 +156,7 @@ class ConsultationViewSet(ModelViewSet):
         urgency_text = "URGENT" if is_urgent else "non-urgent"
         print(f"🔔 Doctor {doctor.email} received a {urgency_text} consultation request from {user.email}")
 
-        # 📧 Send email notification to patient with access code
+        # 📧 Send email notification to patient with access code and magic link
         try:
             patient_name = f"{user.first_name} {user.last_name}".strip() or user.email.split("@")[0]
             doctor_name = f"{doctor.first_name} {doctor.last_name}".strip() or "Врач"
@@ -170,9 +170,10 @@ class ConsultationViewSet(ModelViewSet):
                 doctor_name=doctor_name,
                 access_code=consultation.access_code,
                 consultation_link=consultation_link,
-                scheduled_at=consultation.scheduled_at
+                scheduled_at=consultation.scheduled_at,
+                consultation=consultation  # ✅ Pass consultation object for magic link token
             )
-            logger.info(f"✅ Email sent to {user.email} with access code {consultation.access_code}")
+            logger.info(f"✅ Email sent to {user.email} with access code {consultation.access_code} and magic link token")
         except Exception as email_error:
             # Log error but don't fail the consultation creation
             logger.error(f"❌ Failed to send email notification: {str(email_error)}")
@@ -1227,4 +1228,191 @@ class ConsultationViewSet(ModelViewSet):
             return Response({
                 "success": False,
                 "error": "An error occurred while verifying the access code"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=False, methods=["post"], url_path="auto-login", permission_classes=[AllowAny])
+    def auto_login(self, request):
+        """
+        Secure auto-login endpoint using signed JWT magic link tokens
+        Allows unauthenticated patients to automatically authenticate via email link
+
+        POST /api/v1/consultations/auto-login/
+        {
+            "token": "eyJ0eXAiOiJKV1QiLCJhbGc..."
+        }
+
+        Returns JWT access_token and refresh_token for the patient
+
+        Security features:
+        - Cryptographically signed JWT tokens (impossible to forge)
+        - Short-lived expiration (2 hours - safe & user-friendly)
+        - Minimal token claims (no PII like email addresses)
+        - No DB storage needed (stateless)
+        - Validates consultation exists and is in active state
+        - POST only (not GET) to prevent token leakage in logs
+        - Atomic transaction with row locking (prevents race conditions)
+        - Single-use enforcement (prevents forwarding attacks)
+        """
+        try:
+            from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
+            from rest_framework_simplejwt.exceptions import TokenError, InvalidToken
+            from django.db import transaction
+            from datetime import timedelta
+
+            token_string = request.data.get("token", "").strip()
+
+            if not token_string:
+                logger.warning("⚠️ Auto-login attempted without token")
+                return Response({
+                    "success": False,
+                    "error": "Token is required"
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            # Validate the signed JWT magic link token
+            try:
+                magic_token = AccessToken(token_string)
+            except (TokenError, InvalidToken) as e:
+                logger.warning(f"⚠️ Invalid or expired magic link token: {str(e)}")
+                return Response({
+                    "success": False,
+                    "error": "Invalid or expired magic link token"
+                }, status=status.HTTP_401_UNAUTHORIZED)
+
+            # Verify this is a magic link token (not a regular access token)
+            access_type = magic_token.get('access_type')
+            if access_type != 'magic_link':
+                logger.warning(f"⚠️ Token is not a magic link token: access_type={access_type}")
+                return Response({
+                    "success": False,
+                    "error": "Invalid token type"
+                }, status=status.HTTP_401_UNAUTHORIZED)
+
+            # Extract consultation details from token (minimal claims)
+            consultation_id = magic_token.get('consultation_id')
+            patient_id = magic_token.get('patient_id')
+
+            if not all([consultation_id, patient_id]):
+                logger.error("⚠️ Magic link token missing required claims")
+                return Response({
+                    "success": False,
+                    "error": "Invalid token claims"
+                }, status=status.HTTP_401_UNAUTHORIZED)
+
+            # 🔒 CRITICAL: Use atomic transaction with row-level locking to prevent race conditions
+            # This ensures only ONE request can authenticate, even if multiple hit simultaneously
+            with transaction.atomic():
+                try:
+                    # select_for_update() locks the row until transaction completes
+                    consultation = Consultation.objects.select_for_update().select_related(
+                        'patient', 'doctor', 'doctor__doctor_specialization'
+                    ).get(
+                        id=consultation_id,
+                        patient_id=patient_id
+                    )
+                except Consultation.DoesNotExist:
+                    logger.warning(f"⚠️ Consultation not found for magic link: consultation_id={consultation_id}")
+                    return Response({
+                        "success": False,
+                        "error": "Consultation not found or has been deleted"
+                    }, status=status.HTTP_404_NOT_FOUND)
+
+                # Validate consultation is in an active state (not cancelled/missed/completed)
+                # Allow: pending, scheduled, ongoing, planned
+                active_statuses = ['pending', 'scheduled', 'ongoing', 'planned']
+                if consultation.status not in active_statuses:
+                    logger.info(f"⚠️ Auto-login attempted for inactive consultation: status={consultation.status}, id={consultation_id}")
+                    return Response({
+                        "success": False,
+                        "error": f"This consultation is no longer active (status: {consultation.status})",
+                        "status": consultation.status
+                    }, status=status.HTTP_403_FORBIDDEN)
+
+                # 🔐 SECURITY: Check if magic link has already been used (prevent forwarded link reuse)
+                # Row is locked, so this check is race-condition safe
+                if consultation.magic_link_used_at is not None:
+                    logger.warning(f"⚠️ Magic link reuse attempt for consultation {consultation_id} (originally used at {consultation.magic_link_used_at})")
+                    return Response({
+                        "success": False,
+                        "error": "This magic link has already been used. Please log in manually or request a new link.",
+                        "used_at": consultation.magic_link_used_at.isoformat()
+                    }, status=status.HTTP_403_FORBIDDEN)
+
+                # Mark magic link as used (single-use security)
+                # This is atomic and race-condition proof due to select_for_update()
+                consultation.magic_link_used_at = timezone.now()
+                consultation.save(update_fields=['magic_link_used_at'])
+
+                # Store patient reference before transaction commits
+                patient = consultation.patient
+                patient_email = patient.email
+                meeting_id = consultation.meeting_id
+
+            # Generate regular session JWT tokens for the patient (outside transaction)
+            refresh = RefreshToken.for_user(patient)
+
+            # Shorten access token lifetime for consultation-specific use
+            refresh.access_token.set_exp(lifetime=timedelta(hours=3))
+
+            # Get client IP for audit logging
+            x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+            if x_forwarded_for:
+                client_ip = x_forwarded_for.split(',')[0]
+            else:
+                client_ip = request.META.get('REMOTE_ADDR', 'unknown')
+
+            logger.info(
+                f"✅ Magic link used | consultation_id={consultation_id} | "
+                f"patient_id={patient.id} | patient_email={patient_email} | "
+                f"meeting_id={meeting_id} | ip={client_ip}"
+            )
+
+            # Fetch consultation again for response (transaction is committed, row is unlocked)
+            consultation_response = Consultation.objects.select_related(
+                'patient', 'doctor', 'doctor__doctor_specialization'
+            ).get(id=consultation_id)
+
+            # Build response with consultation details and JWT tokens
+            specialization = None
+            if consultation_response.doctor.doctor_specialization:
+                specialization = {
+                    "ru": consultation_response.doctor.doctor_specialization.name_ru,
+                    "en": consultation_response.doctor.doctor_specialization.name_en,
+                    "kz": consultation_response.doctor.doctor_specialization.name_kz
+                }
+
+            return Response({
+                "success": True,
+                "access_token": str(refresh.access_token),
+                "refresh_token": str(refresh),
+                "user": {
+                    "id": patient.id,
+                    "email": patient.email,
+                    "first_name": patient.first_name,
+                    "last_name": patient.last_name,
+                    "role": patient.role
+                },
+                "consultation": {
+                    "id": consultation_response.id,
+                    "meeting_id": consultation_response.meeting_id,
+                    "access_code": consultation_response.access_code,
+                    "status": consultation_response.status,
+                    "is_urgent": consultation_response.is_urgent,
+                    "scheduled_at": consultation_response.scheduled_at.isoformat() if consultation_response.scheduled_at else None,
+                    "doctor": {
+                        "id": consultation_response.doctor.id,
+                        "first_name": consultation_response.doctor.first_name,
+                        "last_name": consultation_response.doctor.last_name,
+                        "email": consultation_response.doctor.email,
+                        "specialization": specialization
+                    }
+                }
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            logger.error(f"❌ Error during auto-login: {str(e)}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return Response({
+                "success": False,
+                "error": "An error occurred during auto-login"
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

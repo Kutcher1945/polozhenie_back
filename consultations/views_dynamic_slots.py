@@ -224,11 +224,12 @@ def book_dynamic_slot(request):
                 doctor_name=doctor_name,
                 access_code=consultation.access_code,
                 consultation_link=consultation_link,
-                scheduled_at=consultation.scheduled_at
+                scheduled_at=consultation.scheduled_at,
+                consultation=consultation  # ✅ Pass consultation object for magic link token
             )
 
-            print(f"✅ Email sent successfully to {request.user.email}!")
-            logger.info(f"✅ Email sent to {request.user.email} for scheduled consultation {consultation.id}")
+            print(f"✅ Email sent successfully to {request.user.email} with magic link token!")
+            logger.info(f"✅ Email sent to {request.user.email} for scheduled consultation {consultation.id} with magic link")
         except Exception as email_error:
             # Log error but don't fail the consultation creation
             print(f"❌ EMAIL SENDING FAILED!")

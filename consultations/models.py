@@ -154,6 +154,9 @@ class Consultation(BaseModel):
     started_at = models.DateTimeField(null=True, blank=True, verbose_name="Время начала")
     ended_at = models.DateTimeField(null=True, blank=True, verbose_name="Время завершения")
 
+    # Magic link security - track when auto-login link was used
+    magic_link_used_at = models.DateTimeField(null=True, blank=True, verbose_name="Время использования магической ссылки")
+
     # Consultation form data (filled by doctor during video call)
     complaints = models.TextField(blank=True, null=True, verbose_name="Жалобы пациента")
     anamnesis = models.TextField(blank=True, null=True, verbose_name="Анамнез")
