@@ -1052,16 +1052,29 @@ class UserProfileViewSet(ViewSet):
                 {"error": f"Invalid status. Must be one of: {', '.join(valid_statuses)}"},
                 status=status.HTTP_400_BAD_REQUEST
             )
-    
+
+        # Get profile based on role
+        profile = None
+        if user_role == 'doctor' and hasattr(user, 'doctor_profile'):
+            profile = user.doctor_profile
+        elif user_role == 'nurse' and hasattr(user, 'nurse_profile'):
+            profile = user.nurse_profile
+
+        if not profile:
+            return Response(
+                {"error": "Profile not found for user"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
         # Store old status for change detection
-        old_status = user.availability_status
-    
-        # Update availability
-        user.availability_status = availability_status
-        user.availability_note = availability_note
-        user.save()
+        old_status = profile.availability_status
+
+        # Update availability on profile
+        profile.availability_status = availability_status
+        profile.availability_note = availability_note
+        profile.save()
         print(f"[DEBUG] Updated {user.email} availability from {old_status} -> {availability_status}")
-    
+
         # Broadcast availability change via WebSocket with FULL doctor/nurse data
         channel_layer = get_channel_layer()
         if channel_layer:
