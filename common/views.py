@@ -1787,7 +1787,7 @@ class StaffViewSet(ViewSet):
                 'preferred_consultation_duration': profile.preferred_consultation_duration if profile else None,
                 'work_schedule': profile.work_schedule if profile else None,
                 'is_active': staff_member.is_active,
-                'availability_status': staff_member.availability_status,
+                'availability_status': profile.availability_status if profile else 'offline',
                 'created_at': staff_member.created_at.isoformat() if staff_member.created_at else None,
                 'clinic': {
                     'id': profile.clinic.id,
