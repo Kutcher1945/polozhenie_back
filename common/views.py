@@ -626,13 +626,26 @@ class UserViewSet(ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Store old status for change detection
-        old_status = user.availability_status
+        # Get profile based on role
+        profile = None
+        if user_role == 'doctor' and hasattr(user, 'doctor_profile'):
+            profile = user.doctor_profile
+        elif user_role == 'nurse' and hasattr(user, 'nurse_profile'):
+            profile = user.nurse_profile
 
-        # Update availability
-        user.availability_status = availability_status
-        user.availability_note = availability_note
-        user.save()
+        if not profile:
+            return Response(
+                {"error": "Profile not found for user"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Store old status for change detection
+        old_status = profile.availability_status
+
+        # Update availability on profile
+        profile.availability_status = availability_status
+        profile.availability_note = availability_note
+        profile.save()
         print(f"[DEBUG] Updated {user.email} availability from {old_status} -> {availability_status}")
 
         # Broadcast availability change via WebSocket with FULL doctor data
@@ -1659,10 +1672,13 @@ class StaffViewSet(ViewSet):
                         # Save user first to ensure profile exists
                         staff_member.save()
 
-                        # Update DoctorProfile with primary specialization
+                        # Update DoctorProfile with primary specialization and all specializations
                         if hasattr(staff_member, 'doctor_profile'):
                             staff_member.doctor_profile.specialization = specs[0] if specs else None
                             staff_member.doctor_profile.save()
+                            # Set all specializations in M2M field
+                            if specs:
+                                staff_member.doctor_profile.specializations.set(specs)
 
                     elif staff_member.role == 'nurse':
                         specs = []
@@ -1690,10 +1706,13 @@ class StaffViewSet(ViewSet):
                         # Save user first to ensure profile exists
                         staff_member.save()
 
-                        # Update NurseProfile with primary specialization
+                        # Update NurseProfile with primary specialization and all specializations
                         if hasattr(staff_member, 'nurse_profile'):
                             staff_member.nurse_profile.specialization = specs[0] if specs else None
                             staff_member.nurse_profile.save()
+                            # Set all specializations in M2M field
+                            if specs:
+                                staff_member.nurse_profile.specializations.set(specs)
 
             # Update availability_status if provided
             if 'availability_status' in request.data:
@@ -1751,21 +1770,29 @@ class StaffViewSet(ViewSet):
                     NurseProfile.objects.update_or_create(user=staff_member, defaults=profile_defaults)
 
             # Get updated specializations for response (as comma-separated string)
-            specialization = None
-            if staff_member.role == 'doctor':
-                if hasattr(staff_member, 'doctor_profile') and staff_member.doctor_profile and staff_member.doctor_profile.specialization:
-                    specialization = staff_member.doctor_profile.specialization.name_ru
-            elif staff_member.role == 'nurse':
-                if hasattr(staff_member, 'nurse_profile') and staff_member.nurse_profile and staff_member.nurse_profile.specialization:
-                    specialization = staff_member.nurse_profile.specialization.name_ru
-
             # Get profile (refresh to pick up updates)
             staff_member.refresh_from_db()
             profile = None
+            specialization = None
+
             if staff_member.role == 'doctor' and hasattr(staff_member, 'doctor_profile'):
                 profile = staff_member.doctor_profile
+                # Get all specializations from M2M field
+                if profile:
+                    specs = list(profile.specializations.values_list('name_ru', flat=True))
+                    if specs:
+                        specialization = ', '.join(specs)
+                    elif profile.specialization:
+                        specialization = profile.specialization.name_ru
             elif staff_member.role == 'nurse' and hasattr(staff_member, 'nurse_profile'):
                 profile = staff_member.nurse_profile
+                # Get all specializations from M2M field
+                if profile:
+                    specs = list(profile.specializations.values_list('name_ru', flat=True))
+                    if specs:
+                        specialization = ', '.join(specs)
+                    elif profile.specialization:
+                        specialization = profile.specialization.name_ru
 
             # Return updated staff member data
             return Response({
@@ -2077,6 +2104,120 @@ class PatientsViewSet(ViewSet):
             logger.exception("Error creating patient")
             return Response(
                 {'error': 'Не удалось создать пациента', 'details': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    def partial_update(self, request, pk=None):
+        """
+        Update an existing patient (PATCH /api/v1/patients/{id}/)
+        """
+        try:
+            # Check if user is admin
+            if not hasattr(request.user, 'role') or request.user.role != 'admin':
+                return Response(
+                    {'error': 'У вас нет прав доступа'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+            # Get the patient to update
+            try:
+                patient = User.objects.get(id=pk, role='patient', is_deleted=False)
+            except User.DoesNotExist:
+                return Response(
+                    {'error': 'Пациент не найден'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            # Update basic fields
+            if 'first_name' in request.data:
+                patient.first_name = request.data['first_name']
+            if 'last_name' in request.data:
+                patient.last_name = request.data['last_name']
+            if 'email' in request.data:
+                email = request.data['email']
+                # Check if email is already taken by another user
+                if User.objects.filter(email=email).exclude(id=pk).exists():
+                    return Response(
+                        {'error': 'Пользователь с таким email уже существует'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                patient.email = email
+            if 'phone' in request.data:
+                phone = request.data['phone']
+                if phone:
+                    phone = '+' + ''.join(c for c in phone if c.isdigit())
+                # Check if phone is already taken by another user
+                if phone and User.objects.filter(phone=phone).exclude(id=pk).exists():
+                    return Response(
+                        {'error': 'Пользователь с таким телефоном уже существует'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                patient.phone = phone
+            if 'birth_date' in request.data:
+                patient.birth_date = request.data['birth_date'] if request.data['birth_date'] else None
+            if 'gender' in request.data:
+                patient.gender = request.data['gender']
+            if 'address' in request.data:
+                patient.address = request.data['address']
+            if 'city' in request.data:
+                patient.city = request.data['city']
+
+            # Update password if provided
+            if 'password' in request.data and request.data['password']:
+                patient.set_password(request.data['password'])
+
+            # Update clinic assignment (for super admins)
+            admin_profile = None
+            try:
+                admin_profile = request.user.admin_profile
+            except:
+                pass
+
+            is_super_admin = admin_profile is None or admin_profile.is_super_admin or (admin_profile and not admin_profile.clinic)
+
+            if is_super_admin and 'clinic_id' in request.data:
+                clinic_id = request.data['clinic_id']
+                if clinic_id:
+                    from clinics.models import Clinics
+                    try:
+                        clinic = Clinics.objects.get(id=clinic_id)
+                        patient.clinic = clinic
+                    except Clinics.DoesNotExist:
+                        return Response(
+                            {'error': 'Клиника не найдена'},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                else:
+                    patient.clinic = None
+
+            patient.save()
+
+            # Refresh from database to get proper field types
+            patient.refresh_from_db()
+
+            # Return updated patient data
+            return Response({
+                'id': patient.id,
+                'first_name': patient.first_name,
+                'last_name': patient.last_name,
+                'email': patient.email,
+                'phone': patient.phone,
+                'birth_date': patient.birth_date.isoformat() if patient.birth_date else None,
+                'gender': patient.gender,
+                'address': patient.address,
+                'city': patient.city,
+                'is_active': patient.is_active,
+                'created_at': patient.created_at.isoformat() if patient.created_at else None,
+                'clinic': {
+                    'id': patient.clinic.id,
+                    'name': patient.clinic.name
+                } if patient.clinic else None
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            logger.exception("Error updating patient")
+            return Response(
+                {'error': 'Не удалось обновить пациента', 'details': str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -2656,9 +2797,22 @@ class ScheduleViewSet(ViewSet):
         duration = int(request.data.get('duration', 30))
         notes = request.data.get('notes', '')
 
-        if not event_type or not patient_id or not date_str or not time_str:
+        # Validate required fields with user-friendly messages
+        missing_fields = []
+        if not patient_id:
+            missing_fields.append('пациента')
+        if not date_str:
+            missing_fields.append('дату')
+        if not time_str:
+            missing_fields.append('время')
+
+        if missing_fields:
+            if len(missing_fields) == 1:
+                error_msg = f'Пожалуйста, выберите {missing_fields[0]}'
+            else:
+                error_msg = f'Пожалуйста, заполните следующие поля: {", ".join(missing_fields)}'
             return Response(
-                {'error': 'type, patient_id, date, time are required'},
+                {'error': error_msg},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -2887,6 +3041,6 @@ class PatientMedicalProfileViewSet(ModelViewSet):
             user=request.user,
             defaults={'last_modified_by': request.user}
         )
-        
+
         serializer = self.get_serializer(profile)
         return Response(serializer.data)

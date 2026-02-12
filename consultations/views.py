@@ -1499,3 +1499,364 @@ class ConsultationViewSet(ModelViewSet):
                 "success": False,
                 "error": "An error occurred during auto-login"
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=False, methods=['get'], url_path='available-doctors')
+    def available_doctors(self, request):
+        """
+        Get available doctors for a specific date and time.
+        Query params:
+        - date: Date in YYYY-MM-DD format
+        - time: Time in HH:MM format
+        - duration: Duration in minutes (optional, defaults to 30)
+        """
+        from .models import TimeSlot
+        from datetime import datetime, timedelta
+
+        date_str = request.query_params.get('date')
+        time_str = request.query_params.get('time')
+        duration = int(request.query_params.get('duration', 30))
+
+        if not date_str or not time_str:
+            return Response({
+                'error': 'date and time are required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            # Parse date and time
+            target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+            target_time = datetime.strptime(time_str, '%H:%M').time()
+            target_datetime = datetime.combine(target_date, target_time)
+            target_end_time = target_datetime + timedelta(minutes=duration)
+
+            # Get all time slots that overlap with the requested time
+            timeslots = TimeSlot.objects.filter(
+                start_time__date=target_date,
+                start_time__lte=target_datetime,
+                end_time__gte=target_end_time,
+                is_available=True,
+                is_deleted=False
+            ).select_related('doctor', 'doctor__doctor_profile')
+
+            available_doctors = []
+            doctor_ids_added = set()
+
+            # If no TimeSlots exist, check doctors' online_work_schedule
+            if not timeslots.exists():
+                # Get all doctors
+                all_doctors = User.objects.filter(role='doctor').select_related('doctor_profile')
+
+                # Map weekday to schedule key
+                day_names = {
+                    0: 'monday',
+                    1: 'tuesday',
+                    2: 'wednesday',
+                    3: 'thursday',
+                    4: 'friday',
+                    5: 'saturday',
+                    6: 'sunday'
+                }
+
+                weekday = target_date.weekday()
+                day_key = day_names.get(weekday)
+
+                for doctor in all_doctors:
+                    # Skip if doctor doesn't have doctor_profile or work schedule
+                    if not hasattr(doctor, 'doctor_profile') or not doctor.doctor_profile:
+                        continue
+
+                    # Use online_work_schedule if available, otherwise fall back to work_schedule
+                    schedule = doctor.doctor_profile.online_work_schedule or doctor.doctor_profile.work_schedule
+                    if not schedule or day_key not in schedule:
+                        continue
+
+                    day_schedule = schedule[day_key]
+
+                    # Check if this day is enabled
+                    if not day_schedule.get('enabled', False):
+                        continue
+
+                    start_time_str = day_schedule.get('start', '09:00')
+                    end_time_str = day_schedule.get('end', '18:00')
+
+                    # Parse start and end times
+                    start_hour, start_minute = map(int, start_time_str.split(':'))
+                    end_hour, end_minute = map(int, end_time_str.split(':'))
+
+                    # Check if requested time falls within schedule
+                    schedule_start_time = datetime.min.time().replace(hour=start_hour, minute=start_minute)
+
+                    # Handle end time that goes past midnight
+                    if end_hour < start_hour or (end_hour == 0 and end_minute == 0):
+                        # If end time is before start time, it means it goes to next day
+                        # For midnight (00:00), treat as end of day
+                        if target_time >= schedule_start_time:
+                            # Time is after start, before midnight - valid
+                            time_in_range = True
+                        else:
+                            # Time is after midnight, before schedule end
+                            schedule_end_time = datetime.min.time().replace(hour=end_hour, minute=end_minute)
+                            time_in_range = target_time <= schedule_end_time
+                    else:
+                        schedule_end_time = datetime.min.time().replace(hour=end_hour, minute=end_minute)
+                        time_in_range = schedule_start_time <= target_time <= schedule_end_time
+
+                    if not time_in_range:
+                        continue
+
+                    # Check for conflicts with existing consultations
+                    target_datetime_aware = timezone.make_aware(target_datetime)
+                    target_end_time_aware = timezone.make_aware(target_end_time)
+
+                    existing_consultations = Consultation.objects.filter(
+                        doctor=doctor,
+                        scheduled_at__gte=target_datetime_aware,
+                        scheduled_at__lt=target_end_time_aware,
+                        status__in=['scheduled', 'in_progress']
+                    )
+
+                    if existing_consultations.exists():
+                        continue
+
+                    # Get doctor specialization
+                    specialization = "Не указана"
+                    try:
+                        if hasattr(doctor, 'doctor_profile') and doctor.doctor_profile:
+                            if doctor.doctor_profile.specialization:
+                                specialization = doctor.doctor_profile.specialization.name
+                    except:
+                        pass
+
+                    # Doctor is available!
+                    available_doctors.append({
+                        'id': doctor.id,
+                        'first_name': doctor.first_name,
+                        'last_name': doctor.last_name,
+                        'email': doctor.email,
+                        'phone': doctor.phone,
+                        'specialization': specialization,
+                        'available_capacity': 1  # Default capacity for schedule-based availability
+                    })
+                    doctor_ids_added.add(doctor.id)
+            else:
+                # Use existing TimeSlot records
+                for slot in timeslots:
+                    # Skip if already added this doctor
+                    if slot.doctor.id in doctor_ids_added:
+                        continue
+
+                    # Check if slot has available capacity
+                    if slot.booked_consultations >= slot.max_consultations:
+                        continue
+
+                    # Check for conflicts with existing consultations
+                    existing_consultations = Consultation.objects.filter(
+                        doctor=slot.doctor,
+                        scheduled_at__gte=target_datetime,
+                        scheduled_at__lt=target_end_time,
+                        status__in=['scheduled', 'in_progress']
+                    )
+
+                    if existing_consultations.exists():
+                        continue
+
+                    # Get doctor specialization
+                    specialization = "Не указана"
+                    try:
+                        if hasattr(slot.doctor, 'doctor_profile') and slot.doctor.doctor_profile:
+                            if slot.doctor.doctor_profile.specialization:
+                                specialization = slot.doctor.doctor_profile.specialization.name
+                    except:
+                        pass
+
+                    # Doctor is available!
+                    available_doctors.append({
+                        'id': slot.doctor.id,
+                        'first_name': slot.doctor.first_name,
+                        'last_name': slot.doctor.last_name,
+                        'email': slot.doctor.email,
+                        'phone': slot.doctor.phone,
+                        'specialization': specialization,
+                        'available_capacity': slot.max_consultations - slot.booked_consultations
+                    })
+                    doctor_ids_added.add(slot.doctor.id)
+
+            return Response({
+                'date': date_str,
+                'time': time_str,
+                'duration': duration,
+                'available_doctors': available_doctors
+            }, status=status.HTTP_200_OK)
+
+        except ValueError:
+            return Response({
+                'error': 'Invalid date or time format. Use YYYY-MM-DD for date and HH:MM for time'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.error(f"Error fetching available doctors: {e}")
+            return Response({
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=False, methods=['get'], url_path='available-slots')
+    def available_slots(self, request):
+        """
+        Get available time slots for a doctor on a specific date.
+        Query params:
+        - doctor_id: ID of the doctor
+        - date: Date in YYYY-MM-DD format
+        - duration: Duration in minutes (optional, defaults to 30)
+        """
+        from .models import TimeSlot
+        from datetime import datetime, timedelta
+
+        doctor_id = request.query_params.get('doctor_id')
+        date_str = request.query_params.get('date')
+        duration = int(request.query_params.get('duration', 30))
+
+        if not doctor_id or not date_str:
+            return Response({
+                'error': 'doctor_id and date are required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            # Parse the date
+            target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+
+            # Get doctor
+            doctor = User.objects.select_related('doctor_profile').get(id=doctor_id, role='doctor')
+
+            # Get all time slots for this doctor on this date
+            timeslots = TimeSlot.objects.filter(
+                doctor=doctor,
+                start_time__date=target_date,
+                is_available=True,
+                is_deleted=False
+            ).order_by('start_time')
+
+            # Get existing consultations for this doctor on this date
+            existing_consultations = Consultation.objects.filter(
+                doctor=doctor,
+                scheduled_at__date=target_date,
+                status__in=['scheduled', 'in_progress']
+            )
+
+            available_slots = []
+
+            # If no TimeSlot records exist, generate from work schedule
+            if not timeslots.exists() and hasattr(doctor, 'doctor_profile') and doctor.doctor_profile:
+                # Use online_work_schedule if available, otherwise fall back to work_schedule
+                schedule = doctor.doctor_profile.online_work_schedule or doctor.doctor_profile.work_schedule
+
+                if schedule:
+                    # Map weekday to schedule key
+                    day_names = {
+                        0: 'monday',
+                        1: 'tuesday',
+                        2: 'wednesday',
+                        3: 'thursday',
+                        4: 'friday',
+                        5: 'saturday',
+                        6: 'sunday'
+                    }
+
+                    weekday = target_date.weekday()
+                    day_key = day_names.get(weekday)
+
+                    if day_key and day_key in schedule:
+                        day_schedule = schedule[day_key]
+
+                    # Check if this day is enabled
+                    if day_schedule.get('enabled', False):
+                        start_time_str = day_schedule.get('start', '09:00')
+                        end_time_str = day_schedule.get('end', '18:00')
+
+                        # Parse start and end times
+                        start_hour, start_minute = map(int, start_time_str.split(':'))
+                        end_hour, end_minute = map(int, end_time_str.split(':'))
+
+                        # Create datetime objects
+                        current_time = timezone.make_aware(
+                            datetime.combine(target_date, datetime.min.time().replace(hour=start_hour, minute=start_minute))
+                        )
+
+                        # Handle end time that goes past midnight (e.g., 00:00 or 01:00)
+                        if end_hour < start_hour or (end_hour == 0 and end_minute == 0):
+                            end_date = target_date + timedelta(days=1)
+                        else:
+                            end_date = target_date
+
+                        end_time = timezone.make_aware(
+                            datetime.combine(end_date, datetime.min.time().replace(hour=end_hour, minute=end_minute))
+                        )
+
+                        # Generate slots
+                        slot_duration = timedelta(minutes=duration)
+                        while current_time + slot_duration <= end_time:
+                            slot_end = current_time + slot_duration
+
+                            # Check for conflicts with existing consultations
+                            has_conflict = False
+                            for consultation in existing_consultations:
+                                if consultation.scheduled_at:
+                                    consult_end = consultation.scheduled_at + timedelta(minutes=30)
+                                    if (current_time < consult_end and slot_end > consultation.scheduled_at):
+                                        has_conflict = True
+                                        break
+
+                            if not has_conflict:
+                                available_slots.append({
+                                    'id': f"generated_{current_time.strftime('%H%M')}",  # Virtual ID for generated slots
+                                    'start_time': current_time.strftime('%H:%M'),
+                                    'end_time': slot_end.strftime('%H:%M'),
+                                    'available_capacity': 1  # Default capacity for generated slots
+                                })
+
+                            current_time = slot_end
+            else:
+                # Use existing TimeSlot records
+                for slot in timeslots:
+                    # Check if slot has available capacity
+                    if slot.booked_consultations >= slot.max_consultations:
+                        continue
+
+                    # Check for conflicts with existing consultations
+                    slot_end = slot.start_time + timedelta(minutes=duration)
+                    has_conflict = False
+
+                    for consultation in existing_consultations:
+                        if consultation.scheduled_at:
+                            consult_end = consultation.scheduled_at + timedelta(minutes=30)  # Default consultation duration
+
+                            # Check if times overlap
+                            if (slot.start_time < consult_end and slot_end > consultation.scheduled_at):
+                                has_conflict = True
+                                break
+
+                    if not has_conflict:
+                        available_slots.append({
+                            'id': slot.id,
+                            'start_time': slot.start_time.strftime('%H:%M'),
+                            'end_time': slot.end_time.strftime('%H:%M'),
+                            'available_capacity': slot.max_consultations - slot.booked_consultations
+                        })
+
+            return Response({
+                'date': date_str,
+                'doctor_id': doctor_id,
+                'doctor_name': f"{doctor.first_name} {doctor.last_name}",
+                'available_slots': available_slots
+            }, status=status.HTTP_200_OK)
+
+        except User.DoesNotExist:
+            return Response({
+                'error': 'Doctor not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        except ValueError:
+            return Response({
+                'error': 'Invalid date format. Use YYYY-MM-DD'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.error(f"Error fetching available slots: {e}")
+            return Response({
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

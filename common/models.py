@@ -280,8 +280,7 @@ class DoctorProfile(BaseModel):
         verbose_name="Цена онлайн консультации"
     )
     preferred_consultation_duration = models.PositiveIntegerField(
-        null=True,
-        blank=True,
+        default=30,
         verbose_name="Длительность консультации (мин)"
     )
     work_schedule = models.JSONField(
@@ -299,6 +298,23 @@ class DoctorProfile(BaseModel):
         blank=True,
         verbose_name="Расписание работы (Оффлайн консультации)"
     )
+
+    def clean(self):
+        """Validate doctor profile data"""
+        from django.core.exceptions import ValidationError
+
+        # Check if at least one day is enabled in work_schedule or online_work_schedule
+        schedule = self.online_work_schedule or self.work_schedule
+        if schedule:
+            has_enabled_day = any(
+                day_schedule.get('enabled', False)
+                for day_schedule in schedule.values()
+                if isinstance(day_schedule, dict)
+            )
+            if not has_enabled_day:
+                raise ValidationError({
+                    'work_schedule': 'Необходимо включить хотя бы один день в расписании работы'
+                })
 
     @property
     def is_available_for_consultation(self):
@@ -414,8 +430,7 @@ class NurseProfile(BaseModel):
         verbose_name="Цена онлайн консультации"
     )
     preferred_consultation_duration = models.PositiveIntegerField(
-        null=True,
-        blank=True,
+        default=30,
         verbose_name="Длительность консультации (мин)"
     )
     work_schedule = models.JSONField(
