@@ -29,15 +29,34 @@ class UserManager(BaseUserManager):
         return self._create_user(email, password, **extra_fields)
 
     def create_superuser(self, email, password, **extra_fields):
+        from django.apps import apps
+
         extra_fields.setdefault('is_staff', True)
         extra_fields.setdefault('is_superuser', True)
+        extra_fields.setdefault('role', 'admin')  # Superusers should be admins
 
         if extra_fields.get('is_staff') is not True:
             raise ValueError("Superuser must have is_staff=True.")
         if extra_fields.get('is_superuser') is not True:
             raise ValueError("Superuser must have is_superuser=True.")
 
-        return self._create_user(email, password, **extra_fields)
+        user = self._create_user(email, password, **extra_fields)
+
+        # Create AdminProfile for superuser
+        AdminProfile = apps.get_model('common', 'AdminProfile')
+        AdminProfile.objects.get_or_create(
+            user=user,
+            defaults={
+                'admin_type': 'super',  # Super administrator
+                'clinic': None,  # No clinic = super admin
+                'can_manage_staff': True,
+                'can_manage_patients': True,
+                'can_view_reports': True,
+                'can_manage_settings': True,
+            }
+        )
+
+        return user
 
 
 class BaseModel(models.Model):
@@ -572,6 +591,16 @@ class PatientProfile(BaseModel):
         related_name='patient_profile',
         limit_choices_to={'role': 'patient'},
         verbose_name="Пациент"
+    )
+
+    # Clinic assignment (optional - patients can be independent or assigned to a clinic)
+    clinic = models.ForeignKey(
+        'clinics.Clinics',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='patients',
+        verbose_name="Клиника"
     )
 
     # Personal information
