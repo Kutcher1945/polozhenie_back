@@ -300,7 +300,7 @@ DATABASES = {
         'ENGINE': 'django.contrib.gis.db.backends.postgis',
         'NAME': 'zhancare_db',
         'USER': 'zhancare_admin',
-        'PASSWORD': 'YOUR_REAL_PASSWORD',
+        'PASSWORD': '4HPzQt2HyU@',
         'HOST': 'kz1-a-a0denofiul3t07t0.mdb.yandexcloud.kz',
         'PORT': '6432',
         'OPTIONS': {
