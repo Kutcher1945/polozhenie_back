@@ -234,6 +234,7 @@ CSRF_COOKIE_SECURE = True  # или True в проде
 
 CSRF_TRUSTED_ORIGINS = [
     'http://127.0.0.1:5173',
+    "http://94.131.81.77",
     'http://127.0.0.1:8000',
     'https://exp-admin.smartalmaty.kz',
     'http://localhost:3000',
