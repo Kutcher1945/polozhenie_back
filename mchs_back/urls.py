@@ -1,5 +1,6 @@
 from django.contrib import admin
 from django.urls import path, include, re_path
+from django.views.generic import RedirectView
 from rest_framework import permissions
 from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
@@ -22,6 +23,7 @@ schema_view = get_schema_view(
 )
 
 urlpatterns = [
+    path('', RedirectView.as_view(url='/admin/')),
     path("admin/", admin.site.urls),
     path("api/v1/", include("common.urls")),
     path("api/v1/", include("consultations.urls")),
