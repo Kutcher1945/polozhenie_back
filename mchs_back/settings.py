@@ -30,7 +30,7 @@ SECRET_KEY = "django-insecure-emst*q@f==ek=8-o)me!_l1ek2vi*#_s9g46d6+86*nlbvstms
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['127.0.0.1', 'localhost', '.vercel.app', 'exp-admin.smartalmaty.kz', 'zhancare.app', 'www.zhancare.app', 'zhan.care', 'www.zhan.care']
+ALLOWED_HOSTS = ['127.0.0.1', 'localhost', '.vercel.app', 'exp-admin.smartalmaty.kz', 'zhancare.app', 'www.zhancare.app', 'zhan.care', 'www.zhan.care', '94.131.81.77']
 
 # Custom User Model
 AUTH_USER_MODEL = 'common.User'
