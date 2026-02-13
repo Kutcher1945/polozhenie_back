@@ -281,33 +281,33 @@ CHANNEL_LAYERS = {
 #     }
 # }
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.contrib.gis.db.backends.postgis',
-        'NAME': 'core_db',
-        'USER': 'core',
-        'PASSWORD': '4HPzQt2HyU',
-        'HOST': '10.100.200.151',
-        'PORT': '5432',
-    }
-}
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.contrib.gis.db.backends.postgis',
+#         'NAME': 'core_db',
+#         'USER': 'core',
+#         'PASSWORD': '4HPzQt2HyU',
+#         'HOST': '10.100.200.151',
+#         'PORT': '5432',
+#     }
+# }
 
 
 
 # # ssh -L 5433:kz1-a-a0denofiul3t07t0.mdb.yandexcloud.kz:6432 zhancare@94.131.81.77 #Password from ssh is adilan10
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.contrib.gis.db.backends.postgis',
-#         'NAME': 'zhancare_db',
-#         'USER': 'zhancare_admin',
-#         'PASSWORD': '4HPzQt2HyU@',
-#         'HOST': '127.0.0.1',
-#         'PORT': '5433',
-#         'OPTIONS': {
-#             'sslmode': 'require',
-#         },
-#     }
-# }
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.contrib.gis.db.backends.postgis',
+        'NAME': 'zhancare_db',
+        'USER': 'zhancare_admin',
+        'PASSWORD': '4HPzQt2HyU@',
+        'HOST': '127.0.0.1',
+        'PORT': '5433',
+        'OPTIONS': {
+            'sslmode': 'require',
+        },
+    }
+}
 
 
 # DATABASES = {
