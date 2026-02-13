@@ -300,14 +300,15 @@ DATABASES = {
         'ENGINE': 'django.contrib.gis.db.backends.postgis',
         'NAME': 'zhancare_db',
         'USER': 'zhancare_admin',
-        'PASSWORD': '4HPzQt2HyU@',
-        'HOST': '127.0.0.1',
-        'PORT': '5433',
+        'PASSWORD': 'YOUR_REAL_PASSWORD',
+        'HOST': 'kz1-a-a0denofiul3t07t0.mdb.yandexcloud.kz',
+        'PORT': '6432',
         'OPTIONS': {
             'sslmode': 'require',
         },
     }
 }
+
 
 
 # DATABASES = {
