@@ -7,23 +7,16 @@ on:
 workflows:
   deploy:
     tasks:
-      - name: Deploy to production server
+      - name: deploy_to_prod
         cubes:
           - name: deploy
             image: alpine:latest
             script:
-              # Install SSH and git
               - apk add --no-cache openssh git
-
-              # Setup SSH key
               - mkdir -p ~/.ssh
               - echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
               - chmod 600 ~/.ssh/id_ed25519
-
-              # Add server to known hosts
               - ssh-keyscan -H 94.131.81.77 >> ~/.ssh/known_hosts
-
-              # Connect and deploy
               - ssh zhancare@94.131.81.77 "
                   cd /home/zhancare/zhancare-back &&
                   git pull origin main &&
