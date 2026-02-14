@@ -12,17 +12,16 @@ workflows:
           - name: deploy
             image: alpine:latest
             script:
-              - apk add --no-cache openssh git
+              - apk add --no-cache openssh
               - mkdir -p ~/.ssh
               - |
                 cat > ~/.ssh/id_ed25519 << 'EOF'
                 $CI_SSH_KEY
                 EOF
-              - chmod 600 ~/.ssh/id_ed25519
-              - ssh-keyscan -H 94.131.81.77 >> ~/.ssh/known_hosts
-              - ssh -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519 zhancare@94.131.81.77 "
-                  cd /home/zhancare/zhancare-back &&
-                  git pull origin main &&
-                  docker compose down &&
-                  docker compose up -d --build
-                "
+              - echo "==== FILE CONTENT ===="
+              - cat ~/.ssh/id_ed25519
+              - echo "==== FILE SIZE ===="
+              - wc -c ~/.ssh/id_ed25519
+              - echo "==== TRY PARSE ===="
+              - ssh-keygen -y -f ~/.ssh/id_ed25519 || echo "KEY INVALID"
+
