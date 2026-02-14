@@ -6,26 +6,19 @@ on:
 
 workflows:
   deploy:
+    secrets:
+      - SSH_PRIVATE_KEY_B64
     tasks:
       - name: deploy_to_prod
         cubes:
           - name: deploy
             image: alpine:latest
             script:
-              # Install SSH + git
               - apk add --no-cache openssh git
-
-              # Prepare SSH directory
               - mkdir -p ~/.ssh
-
-              # Decode private key from base64
               - echo "$SSH_PRIVATE_KEY_B64" | base64 -d > ~/.ssh/id_ed25519
               - chmod 600 ~/.ssh/id_ed25519
-
-              # Add server to known hosts
               - ssh-keyscan -H 94.131.81.77 >> ~/.ssh/known_hosts
-
-              # Deploy
               - ssh -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519 zhancare@94.131.81.77 "
                   cd /home/zhancare/zhancare-back &&
                   git pull origin main &&
