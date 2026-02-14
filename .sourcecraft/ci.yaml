@@ -14,10 +14,10 @@ workflows:
             script:
               - apk add --no-cache openssh git
               - mkdir -p ~/.ssh
-              - echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+              - echo "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
               - chmod 600 ~/.ssh/id_ed25519
               - ssh-keyscan -H 94.131.81.77 >> ~/.ssh/known_hosts
-              - ssh zhancare@94.131.81.77 "
+              - ssh -i ~/.ssh/id_ed25519 zhancare@94.131.81.77 "
                   cd /home/zhancare/zhancare-back &&
                   git pull origin main &&
                   docker compose down &&
