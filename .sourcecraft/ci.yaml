@@ -1,0 +1,15 @@
+on:
+  push:
+    - workflows: [build]
+      filter:
+        branches: [main]
+
+workflows:
+  build:
+    tasks:
+      - name: test
+        cubes:
+          - name: python
+            image: python:3.11
+            script:
+              - python --version
