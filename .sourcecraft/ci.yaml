@@ -22,6 +22,5 @@ workflows:
               - ssh -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519 zhancare@94.131.81.77 "
                   cd /home/zhancare/zhancare-back &&
                   git pull origin main &&
-                  docker compose down &&
                   docker compose up -d --build
                 "
