@@ -11,7 +11,17 @@ workflows:
         cubes:
           - name: deploy
             image: alpine:latest
+            env:
+              CI_SSH_KEY: $CI_SSH_KEY
             script:
-              - echo "SECRET VALUE:"
-              - echo "$CI_SSH_KEY"
-
+              - apk add --no-cache openssh git
+              - mkdir -p ~/.ssh
+              - printf "%s\n" "$CI_SSH_KEY" > ~/.ssh/id_ed25519
+              - chmod 600 ~/.ssh/id_ed25519
+              - ssh-keyscan -H 94.131.81.77 >> ~/.ssh/known_hosts
+              - ssh -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519 zhancare@94.131.81.77 "
+                  cd /home/zhancare/zhancare-back &&
+                  git pull origin main &&
+                  docker compose down &&
+                  docker compose up -d --build
+                "
