@@ -38,7 +38,7 @@ class AuthViewSet(ModelViewSet):
     serializer_class = UserSerializer
     permission_classes = []
 
-    def list(self):
+    def list(self, request):
         """Disable listing - security risk"""
         return Response(
             {"error": "Listing users is not allowed"},
