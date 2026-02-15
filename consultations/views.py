@@ -704,9 +704,9 @@ class ConsultationViewSet(ModelViewSet):
             doctors = list(User.objects.filter(
                 role="doctor",
                 is_active=True,
-                availability_status='available',  # Only recommend available doctors
-                doctor_specialization__name_ru__icontains=specialty
-            )[:10])
+                doctor_profile__availability_status='available',  # Only recommend available doctors
+                doctor_profile__specialization__name_ru__icontains=specialty
+            ).select_related('doctor_profile', 'doctor_profile__specialization')[:10])
     
             if not doctors:
                 logger.warning(f"❌ Не найден врач по специализации '{specialty}'")
@@ -718,17 +718,17 @@ class ConsultationViewSet(ModelViewSet):
                 fallback_doctors = list(User.objects.filter(
                     role="doctor",
                     is_active=True,
-                    availability_status='available',
-                    doctor_specialization__name_ru__icontains='терапевт'
-                )[:10])
+                    doctor_profile__availability_status='available',
+                    doctor_profile__specialization__name_ru__icontains='терапевт'
+                ).select_related('doctor_profile', 'doctor_profile__specialization')[:10])
 
                 # If no терапевт found, get any available doctor
                 if not fallback_doctors:
                     fallback_doctors = list(User.objects.filter(
                         role="doctor",
                         is_active=True,
-                        availability_status='available'
-                    )[:10])
+                        doctor_profile__availability_status='available'
+                    ).select_related('doctor_profile', 'doctor_profile__specialization')[:10])
 
                 if fallback_doctors:
                     # Select a random fallback doctor
@@ -756,19 +756,20 @@ class ConsultationViewSet(ModelViewSet):
 
                     # Build multilingual specialization
                     specialization = {
-                        "ru": fallback_doctor.doctor_specialization.name_ru if fallback_doctor.doctor_specialization else "Терапевт",
-                        "en": fallback_doctor.doctor_specialization.name_en if fallback_doctor.doctor_specialization else "General Practitioner",
-                        "kz": fallback_doctor.doctor_specialization.name_kz if fallback_doctor.doctor_specialization else "Терапевт"
+                        "ru": fallback_doctor.doctor_profile.specialization.name_ru if (hasattr(fallback_doctor, 'doctor_profile') and fallback_doctor.doctor_profile and fallback_doctor.doctor_profile.specialization) else "Терапевт",
+                        "en": fallback_doctor.doctor_profile.specialization.name_en if (hasattr(fallback_doctor, 'doctor_profile') and fallback_doctor.doctor_profile and fallback_doctor.doctor_profile.specialization) else "General Practitioner",
+                        "kz": fallback_doctor.doctor_profile.specialization.name_kz if (hasattr(fallback_doctor, 'doctor_profile') and fallback_doctor.doctor_profile and fallback_doctor.doctor_profile.specialization) else "Терапевт"
                     }
 
                     # Clinic information
                     clinic_info = None
-                    if fallback_doctor.clinic:
+                    if hasattr(fallback_doctor, 'doctor_profile') and fallback_doctor.doctor_profile and fallback_doctor.doctor_profile.clinic:
+                        clinic = fallback_doctor.doctor_profile.clinic
                         clinic_info = {
-                            "name": fallback_doctor.clinic.name,
-                            "address": fallback_doctor.clinic.address,
-                            "city": fallback_doctor.clinic.city.name_ru if fallback_doctor.clinic.city else None,
-                            "rating": fallback_doctor.clinic.rating
+                            "name": clinic.name,
+                            "address": clinic.address,
+                            "city": clinic.city.name_ru if clinic.city else None,
+                            "rating": clinic.rating
                         }
 
                     return Response({
@@ -819,7 +820,8 @@ class ConsultationViewSet(ModelViewSet):
     
             # Select a random doctor
             doctor = random.choice(doctors)
-            logger.info(f"👨‍⚕️ Назначен врач: {doctor.first_name} {doctor.last_name} ({doctor.doctor_specialization.name_ru})")
+            spec_name = doctor.doctor_profile.specialization.name_ru if (hasattr(doctor, 'doctor_profile') and doctor.doctor_profile and doctor.doctor_profile.specialization) else "Врач"
+            logger.info(f"👨‍⚕️ Назначен врач: {doctor.first_name} {doctor.last_name} ({spec_name})")
 
             ai_recommendation = AIRecommendationLog.objects.create(
                 symptoms=symptoms,
@@ -841,19 +843,20 @@ class ConsultationViewSet(ModelViewSet):
 
             # Build multilingual specialization
             specialization = {
-                "ru": doctor.doctor_specialization.name_ru if doctor.doctor_specialization else "Врач",
-                "en": doctor.doctor_specialization.name_en if doctor.doctor_specialization else "Doctor",
-                "kz": doctor.doctor_specialization.name_kz if doctor.doctor_specialization else "Дәрігер"
+                "ru": doctor.doctor_profile.specialization.name_ru if (hasattr(doctor, 'doctor_profile') and doctor.doctor_profile and doctor.doctor_profile.specialization) else "Врач",
+                "en": doctor.doctor_profile.specialization.name_en if (hasattr(doctor, 'doctor_profile') and doctor.doctor_profile and doctor.doctor_profile.specialization) else "Doctor",
+                "kz": doctor.doctor_profile.specialization.name_kz if (hasattr(doctor, 'doctor_profile') and doctor.doctor_profile and doctor.doctor_profile.specialization) else "Дәрігер"
             }
 
             # Clinic information
             clinic_info = None
-            if doctor.clinic:
+            if hasattr(doctor, 'doctor_profile') and doctor.doctor_profile and doctor.doctor_profile.clinic:
+                clinic = doctor.doctor_profile.clinic
                 clinic_info = {
-                    "name": doctor.clinic.name,
-                    "address": doctor.clinic.address,
-                    "city": doctor.clinic.city.name_ru if doctor.clinic.city else None,
-                    "rating": doctor.clinic.rating
+                    "name": clinic.name,
+                    "address": clinic.address,
+                    "city": clinic.city.name_ru if clinic.city else None,
+                    "rating": clinic.rating
                 }
 
             return Response({
@@ -1038,8 +1041,8 @@ class ConsultationViewSet(ModelViewSet):
             available_doctors = User.objects.filter(
                 role="doctor",
                 is_active=True,
-                availability_status='available'
-            ).select_related('doctor_specialization', 'clinic', 'doctor_profile')
+                doctor_profile__availability_status='available'
+            ).select_related('doctor_profile', 'doctor_profile__specialization', 'doctor_profile__clinic')
 
             # Get 5 random doctors (or less if not enough available)
             doctor_count = min(available_doctors.count(), 5)
@@ -1060,19 +1063,20 @@ class ConsultationViewSet(ModelViewSet):
 
                 # Build multilingual specialization
                 specialization = {
-                    "ru": doctor.doctor_specialization.name_ru if doctor.doctor_specialization else "Врач общей практики",
-                    "en": doctor.doctor_specialization.name_en if doctor.doctor_specialization else "General Practitioner",
-                    "kz": doctor.doctor_specialization.name_kz if doctor.doctor_specialization else "Жалпы тәжірибелі дәрігер"
+                    "ru": doctor.doctor_profile.specialization.name_ru if (hasattr(doctor, 'doctor_profile') and doctor.doctor_profile and doctor.doctor_profile.specialization) else "Врач общей практики",
+                    "en": doctor.doctor_profile.specialization.name_en if (hasattr(doctor, 'doctor_profile') and doctor.doctor_profile and doctor.doctor_profile.specialization) else "General Practitioner",
+                    "kz": doctor.doctor_profile.specialization.name_kz if (hasattr(doctor, 'doctor_profile') and doctor.doctor_profile and doctor.doctor_profile.specialization) else "Жалпы тәжірибелі дәрігер"
                 }
 
                 # Clinic information
                 clinic_info = None
-                if doctor.clinic:
+                if hasattr(doctor, 'doctor_profile') and doctor.doctor_profile and doctor.doctor_profile.clinic:
+                    clinic = doctor.doctor_profile.clinic
                     clinic_info = {
-                        "name": doctor.clinic.name,
-                        "address": doctor.clinic.address,
-                        "city": doctor.clinic.city.name_ru if doctor.clinic.city else None,
-                        "rating": doctor.clinic.rating
+                        "name": clinic.name,
+                        "address": clinic.address,
+                        "city": clinic.city.name_ru if clinic.city else None,
+                        "rating": clinic.rating
                     }
 
                 doctors_data.append({
