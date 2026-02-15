@@ -340,3 +340,82 @@ class AuthViewSet(ModelViewSet):
         except User.DoesNotExist:
             print("❌ No user found with matching email and code.")
             return Response({"error": "Неверный код или email."}, status=status.HTTP_400_BAD_REQUEST)
+
+    @swagger_auto_schema(
+        operation_description="Get available doctors",
+        responses={200: "List of available doctors"},
+    )
+    @action(detail=False, methods=["get"], url_path="doctor/available")
+    def get_available_doctors(self, request):
+        """Fetch a list of available doctors (only those with availability_status='available')."""
+        doctors = User.objects.filter(
+            role="doctor",
+            is_active=True,
+            doctor_profile__availability_status='available'  # ✅ Only return available doctors
+        ).select_related(
+            'doctor_profile',
+            'doctor_profile__clinic',
+            'doctor_profile__clinic__city',
+            'doctor_profile__specialization'
+        )
+
+        if not doctors.exists():
+            return Response(
+                {"error": "No available doctors found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        language = request.GET.get('lang', 'ru')
+
+        doctor_list = []
+        for doctor in doctors:
+            doctor_profile = getattr(doctor, 'doctor_profile', None)
+
+            if not doctor_profile:
+                continue
+
+            # Get specialization in requested language
+            specialization = "Специальность не указана"
+            if doctor_profile.specialization:
+                if language == 'kz':
+                    specialization = doctor_profile.specialization.name_kz
+                elif language == 'en':
+                    specialization = doctor_profile.specialization.name_en
+                else:
+                    specialization = doctor_profile.specialization.name_ru
+            elif doctor_profile.doctor_type:
+                specialization = doctor_profile.doctor_type
+
+            # Get clinic information
+            clinic_data = None
+            if doctor_profile.clinic:
+                clinic = doctor_profile.clinic
+                clinic_data = {
+                    "id": clinic.id,
+                    "name": clinic.name,
+                    "address": clinic.address or None,
+                    "phone": clinic.phones if hasattr(clinic, 'phones') else None,
+                    "city": clinic.city.name_ru if clinic.city else None,
+                }
+
+            doctor_list.append({
+                "id": doctor.id,
+                "name": f"{doctor.first_name} {doctor.last_name}",
+                "email": doctor.email,
+                "doctor_type": specialization,
+                "availability_status": doctor_profile.availability_status or 'offline',
+                "availability_note": doctor_profile.availability_note or '',
+                "language": doctor.language or 'ru',
+                "years_of_experience": doctor_profile.years_of_experience,
+                "online_consultation_price": str(doctor_profile.online_consultation_price) if doctor_profile.online_consultation_price else None,
+                "work_schedule": doctor_profile.work_schedule,
+                "clinic": clinic_data,
+                "specialization": {
+                    "id": doctor_profile.specialization.id if doctor_profile.specialization else None,
+                    "name_ru": doctor_profile.specialization.name_ru if doctor_profile.specialization else None,
+                    "name_kz": doctor_profile.specialization.name_kz if doctor_profile.specialization else None,
+                    "name_en": doctor_profile.specialization.name_en if doctor_profile.specialization else None,
+                } if doctor_profile.specialization else None
+            })
+
+        return Response({"doctors": doctor_list}, status=status.HTTP_200_OK)

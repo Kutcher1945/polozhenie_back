@@ -22,10 +22,11 @@ class PublicViewSet(ViewSet):
     )
     @action(detail=False, methods=["get"], url_path="doctors/available")
     def get_available_doctors(self, request):
-        """Fetch a list of available doctors."""
+        """Fetch a list of available doctors (only those with availability_status='available')."""
         doctors = User.objects.filter(
             role="doctor",
-            is_active=True
+            is_active=True,
+            doctor_profile__availability_status='available'  # ✅ Only return available doctors
         ).select_related(
             'doctor_profile',
             'doctor_profile__clinic',

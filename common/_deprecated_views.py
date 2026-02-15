@@ -390,11 +390,12 @@ class UserViewSet(ModelViewSet):
     )
     @action(detail=False, methods=["get"], url_path="doctor/available")
     def get_available_doctors(self, request):
-        """Fetch a list of available doctors."""
+        """Fetch a list of available doctors (only those with availability_status='available')."""
         # Optimize query to avoid N+1 problem by prefetching profile and related data
         doctors = User.objects.filter(
             role="doctor",
-            is_active=True
+            is_active=True,
+            doctor_profile__availability_status='available'  # ✅ Only return available doctors
         ).select_related('doctor_profile', 'doctor_profile__clinic', 'doctor_profile__clinic__city', 'doctor_profile__specialization')
 
         if not doctors.exists():
