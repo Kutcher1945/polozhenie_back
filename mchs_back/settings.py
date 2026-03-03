@@ -187,6 +187,8 @@ FRONTEND_URL = os.getenv('FRONTEND_URL', 'https://www.zhan.care')
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
+    "tauri://localhost",
+    "https://tauri.localhost",
     "https://www.zhan.care",
     "https://www.zhancare.app",
     "https://zhan.care",
@@ -321,7 +323,7 @@ DATABASES = {
 #     }
 # }
 
-MISTRAL_API_KEY="QqkMxELY0YVGkCx17Vya04Sq9nGvCahu"
+MISTRAL_API_KEY="9V4IWS0i3H9UGLwdymiJY7ysUgk0ddF7"
 
 # DATABASES = {
 #     'default': {

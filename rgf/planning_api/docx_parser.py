@@ -1,337 +1,313 @@
 """
-Universal DOCX parser that handles all document structure types
+Universal DOCX parser — single-pass keyword-driven state machine.
 
-Supports:
-- CHAPTER-BASED: "Глава 1", "Глава 2"...
-- NUMBERED SECTIONS: "1. Общие положения", "2. Задачи"...
-- CUSTOM: Keyword-based extraction
+Handles all known Almaty government document structures:
+ - "Глава 1 / Глава 2" chapter-based
+ - "1. Общие положения / 2. Задачи" numbered-sections
+ - Keyword-only headers (no chapter/section numbers)
+ - Combined "Права и обязанности" section (no separate sub-markers)
+ - Items numbered as "N)" or "N. " or plain text (with regular or non-breaking space)
 """
 
+import re
 from docx import Document
 
+DEBUG = False
 
-def detect_structure_type(doc):
-    """Detect document structure type"""
-    all_text = [para.text.strip() for para in doc.paragraphs if para.text.strip()]
-    full_text = '\n'.join(all_text).lower()
-
-    if 'глава 1' in full_text and 'глава 2' in full_text:
-        return 'CHAPTER-BASED'
-    elif '1. общие положения' in full_text or '1.общие положения' in full_text:
-        return 'NUMBERED-SECTIONS'
-    else:
-        return 'CUSTOM'
+def _debug(msg):
+    if DEBUG:
+        print(msg)
 
 
-def parse_chapter_based(doc):
-    """Parse CHAPTER-BASED documents"""
+# ─── Text extraction ──────────────────────────────────────────────────────────
 
-    general_provisions = []
-    tasks = []
-    authorities_rights = []
-    authorities_responsibilities = []
-    functions = []
-    additions = []
-
-    current_chapter = None
-    current_subsection = None
-    in_rights = False
-    in_responsibilities = False
-
-    for para in doc.paragraphs:
-        text = para.text.strip()
-        if not text:
-            continue
-
-        if 'Глава 1' in text or 'ГЛАВА 1' in text:
-            current_chapter = 1
-            current_subsection = None
-            continue
-        elif 'Глава 2' in text or 'ГЛАВА 2' in text:
-            current_chapter = 2
-            current_subsection = None
-            continue
-        elif 'Глава 3' in text or 'ГЛАВА 3' in text:
-            current_chapter = 3
-            current_subsection = None
-            additions.append(text)
-            continue
-        elif 'Глава 4' in text or 'ГЛАВА 4' in text:
-            current_chapter = 4
-            current_subsection = None
-            additions.append(text)
-            continue
-        elif 'Глава 5' in text or 'ГЛАВА 5' in text:
-            current_chapter = 5
-            current_subsection = None
-            additions.append(text)
-            continue
-
-        if current_chapter == 2:
-            if 'Задачи' in text and (text.startswith('12') or text.startswith('Задачи')):
-                current_subsection = 'tasks'
-                continue
-            elif 'Полномочия' in text and (text.startswith('13') or text.startswith('Полномочия')):
-                current_subsection = 'authorities'
-                in_rights = False
-                in_responsibilities = False
-                if 'права:' in text.lower() or 'права :' in text.lower():
-                    in_rights = True
-                continue
-            elif 'Функции' in text and (text.startswith('14') or text.startswith('15') or text.startswith('Функции')):
-                current_subsection = 'functions'
-                in_rights = False
-                in_responsibilities = False
-                continue
-
-        if current_chapter == 1:
-            general_provisions.append(text)
-
-        elif current_chapter == 2:
-            if current_subsection == 'tasks':
-                if text and text[0].isdigit() and ')' in text[:5]:
-                    tasks.append(text)
-
-            elif current_subsection == 'authorities':
-                if 'права:' in text.lower() or 'права :' in text.lower():
-                    in_rights = True
-                    in_responsibilities = False
-                    continue
-                elif 'обязанности:' in text.lower() or 'обязанности :' in text.lower():
-                    in_rights = False
-                    in_responsibilities = True
-                    continue
-
-                if (in_rights or in_responsibilities) and len(text) > 10:
-                    if in_rights:
-                        authorities_rights.append(text)
-                    elif in_responsibilities:
-                        authorities_responsibilities.append(text)
-
-            elif current_subsection == 'functions':
-                if text and text[0].isdigit() and ')' in text[:5]:
-                    functions.append(text)
-
-        elif current_chapter in [3, 4, 5]:
-            additions.append(text)
-
-    return {
-        'general_provisions': '\n'.join(general_provisions),
-        'tasks': tasks,
-        'authorities_rights': authorities_rights,
-        'authorities_responsibilities': authorities_responsibilities,
-        'functions': functions,
-        'additions': '\n'.join(additions)
-    }
+def _iter_texts(doc):
+    """Yield paragraph texts in document order, including from tables."""
+    for elem in doc.element.body:
+        local = elem.tag.split('}')[-1] if '}' in elem.tag else elem.tag
+        if local == 'p':
+            from docx.text.paragraph import Paragraph
+            text = Paragraph(elem, doc).text.strip()
+            if text:
+                yield text
+        elif local == 'tbl':
+            from docx.table import Table
+            for row in Table(elem, doc).rows:
+                for cell in row.cells:
+                    for p in cell.paragraphs:
+                        text = p.text.strip()
+                        if text:
+                            yield text
 
 
-def parse_numbered_sections(doc):
-    """Parse NUMBERED SECTIONS documents"""
+# ─── Classification helpers ───────────────────────────────────────────────────
 
-    general_provisions = []
-    tasks = []
-    authorities_rights = []
-    authorities_responsibilities = []
-    functions = []
-    additions = []
-
-    current_section = None
-    current_subsection = None
-    in_rights = False
-    in_responsibilities = False
-    section_2_started = False
-    section_3_or_higher = False
-
-    for para in doc.paragraphs:
-        text = para.text.strip()
-        if not text:
-            continue
-
-        if text.startswith('1.') and 'Общие положения' in text:
-            current_section = 1
-            continue
-        elif text.startswith('2.') and ('Задачи' in text or 'Миссия' in text):
-            current_section = 2
-            section_2_started = True
-            current_subsection = None
-            continue
-        elif (len(text) < 100 and
-              (text.startswith('3.') or text.startswith('4.') or
-               text.startswith('5.') or text.startswith('6.')) and
-              ('Статус' in text or 'Имущество' in text or 'Реорганизация' in text or
-               'руководител' in text.lower())):
-            current_section = 3
-            section_3_or_higher = True
-            additions.append(text)
-            continue
-
-        if section_2_started and not section_3_or_higher:
-            if ('Задачи' in text and len(text) < 100 and
-                    (text[0].isdigit() or text.startswith('Задачи'))):
-                current_subsection = 'tasks'
-                continue
-            elif (('Полномочия' in text or ('Права' in text and 'обязанности' in text)) and
-                  len(text) < 150 and
-                  (text[0].isdigit() or text.startswith('Полномочия') or text.startswith('Права'))):
-                current_subsection = 'authorities'
-                in_rights = False
-                in_responsibilities = False
-                if 'права:' in text.lower() or 'права :' in text.lower():
-                    in_rights = True
-                continue
-            elif ('Функции' in text and len(text) < 100 and
-                  (text[0].isdigit() or text.startswith('Функции'))):
-                current_subsection = 'functions'
-                in_rights = False
-                in_responsibilities = False
-                continue
-
-        if current_section == 1:
-            general_provisions.append(text)
-
-        elif current_section == 2 and section_2_started and not section_3_or_higher:
-            if current_subsection == 'tasks':
-                if text and text[0].isdigit() and ')' in text[:5]:
-                    tasks.append(text)
-
-            elif current_subsection == 'authorities':
-                if 'права:' in text.lower() or 'права :' in text.lower():
-                    in_rights = True
-                    in_responsibilities = False
-                    continue
-                elif 'обязанности:' in text.lower() or 'обязанности :' in text.lower():
-                    in_rights = False
-                    in_responsibilities = True
-                    continue
-
-                if (in_rights or in_responsibilities) and len(text) > 10:
-                    if in_rights:
-                        authorities_rights.append(text)
-                    elif in_responsibilities:
-                        authorities_responsibilities.append(text)
-
-            elif current_subsection == 'functions':
-                if text and text[0].isdigit() and ')' in text[:5]:
-                    functions.append(text)
-            elif current_subsection is None:
-                if text and text[0].isdigit() and ')' in text[:5]:
-                    if not functions:
-                        tasks.append(text)
-                    else:
-                        functions.append(text)
-
-        elif section_3_or_higher:
-            additions.append(text)
-
-    return {
-        'general_provisions': '\n'.join(general_provisions),
-        'tasks': tasks,
-        'authorities_rights': authorities_rights,
-        'authorities_responsibilities': authorities_responsibilities,
-        'functions': functions,
-        'additions': '\n'.join(additions)
-    }
+# Numbered list item: "1) text" — also matches non-breaking space (\xa0)
+_ITEM_PAREN_RE = re.compile(r'^\d+\)[\s\xa0]')
+# Alternative numbering: "1. text"
+_ITEM_DOT_RE   = re.compile(r'^\d+\.[\s\xa0]')
+# Chapter header: "Глава 1.", "Глава 2.", etc.
+_CHAPTER_RE    = re.compile(r'^глава\s+\d+', re.I)
 
 
-def parse_custom(doc):
-    """Parse CUSTOM documents using keyword-based extraction"""
+def _is_multi_keyword_title(tl):
+    """
+    True for combined section titles that list multiple topics, e.g.:
+    "2. Миссия, цель, основные задачи, функции, права и обязанности..."
+    These are chapter titles, not zone-specific headers.
+    """
+    return bool(
+        re.search(r'задачи.{2,}функции', tl) or
+        re.search(r'задачи.{2,}полномочия', tl) or
+        re.search(r'задачи.{2,}права', tl) or
+        re.search(r'миссия.{2,}задачи', tl)
+    )
 
-    general_provisions = []
-    tasks = []
-    authorities_rights = []
-    authorities_responsibilities = []
-    functions = []
-    additions = []
 
-    current_zone = None
-    in_rights = False
-    in_responsibilities = False
-    general_end = False
+def _sub_from_text(tl):
+    """
+    Detect a rights/responsibilities sub-header within the authorities zone.
+    Accepts: "права:", "1) права:", "2) обязанности:", "права :", etc.
+    Returns 'rights', 'responsibilities', or None.
+    """
+    if re.match(r'^(\d+[\)\.]\s*)?права\s*:?\s*$', tl):
+        return 'rights'
+    if re.match(r'^(\d+[\)\.]\s*)?обязанности\s*:?\s*$', tl):
+        return 'responsibilities'
+    return None
 
-    for para in doc.paragraphs:
-        text = para.text.strip()
-        if not text:
-            continue
 
-        text_lower = text.lower()
+# Subsection words that appear inside tasks/functions zones but are NOT items
+_NON_ITEM_HEADERS = re.compile(
+    r'^\d+[\.\)]\s*(миссия|цель\b|наименование|место нахождения|финансирование)',
+    re.I
+)
 
-        if 'общие положения' in text_lower:
-            current_zone = 'general'
-            continue
-        elif ('задачи' in text_lower and
-              (len(text) < 100 or text.startswith('2.') or 'миссия' in text_lower)):
-            current_zone = 'tasks'
-            general_end = True
-            continue
-        elif 'полномочия' in text_lower and len(text) < 100:
-            current_zone = 'authorities'
-            general_end = True
-            in_rights = False
-            in_responsibilities = False
-            if 'права:' in text_lower or 'права :' in text_lower:
-                in_rights = True
-            continue
-        elif 'функции' in text_lower and (len(text) < 100 or text[0].isdigit()):
-            current_zone = 'functions'
-            general_end = True
-            in_rights = False
-            in_responsibilities = False
-            continue
-        elif ('имущество' in text_lower or
-              'реорганизация' in text_lower or
-              'статус' in text_lower) and len(text) < 100:
-            current_zone = 'additions'
-            additions.append(text)
-            continue
-
-        if current_zone == 'general' and not general_end:
-            general_provisions.append(text)
-
-        elif current_zone == 'tasks':
-            if text and text[0].isdigit() and ')' in text[:5]:
-                tasks.append(text)
-
-        elif current_zone == 'authorities':
-            if 'права:' in text_lower or 'права :' in text_lower:
-                in_rights = True
-                in_responsibilities = False
-                continue
-            elif 'обязанности:' in text_lower or 'обязанности :' in text_lower:
-                in_rights = False
-                in_responsibilities = True
-                continue
-
-            if (in_rights or in_responsibilities) and len(text) > 10:
-                if in_rights:
-                    authorities_rights.append(text)
-                elif in_responsibilities:
-                    authorities_responsibilities.append(text)
-
-        elif current_zone == 'functions':
-            if text and text[0].isdigit() and ')' in text[:5]:
-                functions.append(text)
-
-        elif current_zone == 'additions':
-            additions.append(text)
-
-    return {
-        'general_provisions': '\n'.join(general_provisions),
-        'tasks': tasks,
-        'authorities_rights': authorities_rights,
-        'authorities_responsibilities': authorities_responsibilities,
-        'functions': functions,
-        'additions': '\n'.join(additions)
-    }
-
+# ─── Main parser ──────────────────────────────────────────────────────────────
 
 def parse_docx_universal(docx_path):
-    """Universal parser that handles all document types."""
+    """
+    Parse a .docx regulation document and return structured data dict.
+    Keys: general_provisions, tasks, authorities_rights,
+          authorities_responsibilities, functions, additions.
+    """
     doc = Document(docx_path)
-    structure_type = detect_structure_type(doc)
 
-    if structure_type == 'CHAPTER-BASED':
-        return parse_chapter_based(doc)
-    elif structure_type == 'NUMBERED-SECTIONS':
-        return parse_numbered_sections(doc)
-    else:
-        return parse_custom(doc)
+    general_provisions    = []
+    tasks                 = []
+    authorities_rights    = []
+    authorities_responsibilities = []
+    functions             = []
+    additions             = []
+
+    zone = None   # 'general' | 'tasks' | 'authorities' | 'functions' | 'additions'
+    sub  = None   # 'rights' | 'responsibilities' | 'combined'  (within authorities)
+    _func_fmt   = None   # 'paren' | 'dot' — format of first item in current functions zone
+    _in_sublist = False  # True while inside a N.-colon sub-list within functions
+
+    # Structural progress flags — order-independent zone detection
+    seen_general   = False
+    seen_tasks     = False
+    seen_functions = False
+
+    def _reset_chapter():
+        """Full state reset between document chapters."""
+        nonlocal zone, sub, _func_fmt, _in_sublist, seen_general, seen_tasks, seen_functions
+        zone           = None
+        sub            = None
+        _func_fmt      = None
+        _in_sublist    = False
+        seen_general   = False
+        seen_tasks     = False
+        seen_functions = False
+        _debug("  [reset chapter]")
+
+    for text in _iter_texts(doc):
+        if len(text) < 3:
+            continue
+
+        tl = text.lower()
+
+        # ── Attempt to detect zone transitions ────────────────────────────────
+        # N) items are never zone headers — skip zone detection for them.
+        if not _ITEM_PAREN_RE.match(text):
+
+            # ── Skip multi-keyword chapter titles ────────────────────────────
+            # e.g. "2. Миссия, цель, задачи, функции, права и обязанности"
+            if _is_multi_keyword_title(tl) and len(text) < 300:
+                _debug(f"  SKIP multi-kw: {text[:60]}")
+                continue
+
+            # ── General provisions ───────────────────────────────────────────
+            if 'общие положения' in tl and len(text) < 120:
+                zone = 'general'
+                sub  = None
+                seen_general = True
+                _debug(f"  ZONE→general: {text[:60]}")
+                continue
+
+            # ── Additions (property, reorganization, …) ──────────────────────
+            # Keyword must be near the start of the text (main topic), not buried
+            # mid-sentence ("управлять переданным ему имуществом;").
+            _kw_pos = min(
+                (tl.index(kw) for kw in ('имущество', 'реорганизация', 'ликвидация') if kw in tl),
+                default=999,
+            )
+            if _kw_pos < 20 and len(text) < 120:
+                zone = 'additions'
+                additions.append(text)
+                _debug(f"  ZONE→additions: {text[:60]}")
+                continue
+
+            # ── Tasks ────────────────────────────────────────────────────────
+            if re.search(r'\bзадачи\b', tl) and len(text) < 120:
+                if not _is_multi_keyword_title(tl) and not re.search(r'задачи.{2,}права|задачи.{2,}функции', tl):
+                    zone = 'tasks'
+                    sub  = None
+                    _func_fmt = None
+                    seen_tasks = True
+                    _debug(f"  ZONE→tasks: {text[:60]}")
+                    continue
+
+            # ── Functions ────────────────────────────────────────────────────
+            if re.search(r'\bфункции\b', tl) and len(text) < 200:
+                if not _is_multi_keyword_title(tl) and not re.search(r'функции.{2,}права', tl):
+                    if zone != 'functions':
+                        _func_fmt = None  # reset only when truly entering from outside
+                    zone = 'functions'
+                    sub  = None
+                    seen_functions = True
+                    _debug(f"  ZONE→functions: {text[:60]}")
+                    continue
+
+            # ── Authorities / Полномочия ──────────────────────────────────────
+            if re.search(r'\bполномочия\b', tl) and len(text) < 150:
+                zone = 'authorities'
+                sub  = None
+                if re.search(r'права\s*:', tl):
+                    sub = 'rights'
+                _debug(f"  ZONE→authorities(полномочия): {text[:60]}")
+                continue
+
+            # ── Combined "Права и обязанности" ───────────────────────────────
+            # Real zone header when structural progress confirms we're past the
+            # intro section, OR the legislative "определяется" formula is used,
+            # OR it is a short standalone header without an org name.
+            if re.search(r'права\s+и\s+обязанности', tl) and len(text) < 700:
+                is_real_header = (
+                    # Strongest signal: document has already gone through general + tasks/functions
+                    (seen_general and (seen_tasks or seen_functions) and zone not in ('additions',))
+                    or re.search(r'определяет|определяются|определен', tl)
+                    or (len(text) < 50 and not re.search(r'управления|учреждения|аппарата', tl))
+                )
+                if is_real_header:
+                    zone = 'authorities'
+                    sub  = 'combined'
+                    _debug(f"  ZONE→authorities(combined): {text[:60]}")
+                continue
+
+            # ── Chapter header with no recognized zone keyword → reset state ──
+            # Prevents zone/state leakage into Глава 3 (Организация деятельности)
+            # and beyond. Глава 1/2 are handled above before reaching this point.
+            if _CHAPTER_RE.match(tl):
+                _reset_chapter()
+                continue
+
+        # ── Sub-zone detection inside authorities (rights / responsibilities) ──
+        if zone == 'authorities':
+            sub_detected = _sub_from_text(tl)
+            if sub_detected:
+                sub = sub_detected
+                _debug(f"  sub→{sub_detected}: {text[:60]}")
+                continue
+
+        # ── Content collection ────────────────────────────────────────────────
+        if zone == 'general':
+            general_provisions.append(text)
+
+        elif zone == 'tasks':
+            if _NON_ITEM_HEADERS.match(text):
+                continue
+            if len(text) > 8:
+                tasks.append(text)
+
+        elif zone == 'authorities':
+            if len(text) > 10:
+                if sub in ('rights', 'combined'):
+                    authorities_rights.append(text)
+                if sub in ('responsibilities', 'combined'):
+                    # combined: intentionally duplicated into both lists — the API
+                    # requires both fields populated when the document merges them
+                    authorities_responsibilities.append(text)
+
+        elif zone == 'functions':
+            # ── Explicit rights section: "вправе:" / "имеет право:" header ──
+            if (not _ITEM_PAREN_RE.match(text)
+                    and re.search(r'\bвправе\b|\bимеет\s+право\b', tl)
+                    and text.rstrip().endswith(':')
+                    and len(text) < 300):
+                zone = 'authorities'
+                sub  = 'combined'
+                _in_sublist = False
+                _debug(f"  ZONE→authorities(вправе): {text[:60]}")
+                continue
+
+            # ── Sub-zone headers within functions: "1) Права:" / "2) Обязанности:" ──
+            # Some documents list rights/responsibilities as numbered sub-headers
+            # inside what looks like a functions section.
+            sub_detected = _sub_from_text(tl)
+            if sub_detected:
+                zone = 'authorities'
+                sub  = sub_detected
+                _in_sublist = False
+                _debug(f"  ZONE→authorities({sub_detected}) from functions: {text[:60]}")
+                continue
+
+            if _ITEM_PAREN_RE.match(text):
+                if _func_fmt is None:
+                    _func_fmt = 'paren'
+                # Implicit rights section: N) item appears outside a sub-list when
+                # all function items so far used N. format.
+                # Require semantic confirmation to avoid false positives.
+                if _func_fmt == 'dot' and not _in_sublist:
+                    if re.search(r'прав|обязан|полномочи', tl):
+                        zone = 'authorities'
+                        sub  = 'combined'
+                        _in_sublist = False
+                        _debug(f"  ZONE→authorities(fmt-switch): {text[:60]}")
+                        if len(text) > 10:
+                            authorities_rights.append(text)
+                            authorities_responsibilities.append(text)
+                        continue
+
+            elif _ITEM_DOT_RE.match(text):
+                if _func_fmt is None:
+                    _func_fmt = 'dot'
+                # Track whether next N) items are sub-items of this N. item
+                _in_sublist = text.rstrip().endswith(':')
+
+            if _NON_ITEM_HEADERS.match(text):
+                continue
+            if len(text) > 8:
+                functions.append(text)
+
+        elif zone == 'additions':
+            additions.append(text)
+
+    has_gp    = bool(general_provisions)
+    has_tasks = len(tasks) >= 1
+    has_funcs = len(functions) >= 3
+    has_auth  = bool(authorities_rights or authorities_responsibilities)
+    confidence = sum([has_gp, has_tasks, has_funcs, has_auth]) / 4
+
+    _debug(f"  confidence={confidence:.2f}  gp={has_gp} tasks={has_tasks} funcs={has_funcs} auth={has_auth}")
+
+    return {
+        'general_provisions':           '\n'.join(general_provisions),
+        'tasks':                        tasks,
+        'authorities_rights':           authorities_rights,
+        'authorities_responsibilities': authorities_responsibilities,
+        'functions':                    functions,
+        'additions':                    '\n'.join(additions),
+        'confidence':                   confidence,   # 0.0–1.0; <0.75 warrants manual review
+    }

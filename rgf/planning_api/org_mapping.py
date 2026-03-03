@@ -125,8 +125,15 @@ def find_gu_by_org_name(org_name, gu_list):
     return None, None
 
 
+_guid_mapping_cache: dict | None = None
+
+
 def load_guid_mapping(guid_file_path=None):
-    """Загрузить прямой маппинг GUID → Name из файла."""
+    """Загрузить прямой маппинг GUID → Name из файла (кэшируется в памяти)."""
+    global _guid_mapping_cache
+    if _guid_mapping_cache is not None:
+        return _guid_mapping_cache
+
     if guid_file_path is None:
         guid_file_path = Path(__file__).parent / 'data' / 'guid_names.txt'
 
@@ -146,6 +153,7 @@ def load_guid_mapping(guid_file_path=None):
     except FileNotFoundError:
         pass
 
+    _guid_mapping_cache = guid_mapping
     return guid_mapping
 
 
