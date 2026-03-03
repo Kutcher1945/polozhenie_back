@@ -40,3 +40,5 @@ aiogram
 django-auditlog
 python-dotenv
 gunicorn
+mistralai
+numpy

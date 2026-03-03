@@ -41,9 +41,6 @@ ALLOWED_HOSTS = ['127.0.0.1',
                 '94.131.81.77',
                 'api.zhan.care']
 
-# Custom User Model
-AUTH_USER_MODEL = 'common.User'
-
 # Application definition
 
 INSTALLED_APPS = [
@@ -68,15 +65,7 @@ INSTALLED_APPS = [
     "drf_spectacular",
     "auditlog",  # Audit logging for compliance
     # Apps
-    "common",  # Your custom app
-    "appointments",
-    "consultations",
-    "payments",
-    "ai_game",
     "telegram_bot",
-    "clinics",
-    "clinical_protocols",
-    "questionnaire",
 ]
 
 APPEND_SLASH = False  # Disable appending slashes to URLs
@@ -132,8 +121,7 @@ SPECTACULAR_SETTINGS = {
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'common.authentication.CustomJWTAuthentication',  # JWT with session validation
-        'rest_framework.authentication.TokenAuthentication',  # Legacy token auth (for migration)
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     # 'DEFAULT_PERMISSION_CLASSES': (
@@ -249,10 +237,6 @@ CSRF_TRUSTED_ORIGINS = [
     'https://exp-admin.smartalmaty.kz',
     'http://localhost:3000',
     'http://localhost:8000',
-    'https://www.zhan.care',
-    'https://www.zhancare.app',
-    'https://zhan.care',
-    'https://zhancare.app',
 ]
 
 TEMPLATES = [
@@ -295,8 +279,8 @@ CHANNEL_LAYERS = {
 DATABASES = {
     'default': {
         'ENGINE': 'django.contrib.gis.db.backends.postgis',
-        'NAME': 'core_db',
-        'USER': 'core',
+        'NAME': 'experiment_db',
+        'USER': 'expert_master',
         'PASSWORD': '4HPzQt2HyU',
         'HOST': '10.100.200.151',
         'PORT': '5432',
@@ -408,3 +392,21 @@ EMAIL_USE_SSL = True
 EMAIL_HOST_USER = 'marzipan9256@yandex.com'
 EMAIL_HOST_PASSWORD = 'deecnwsrkvczrcqf'
 DEFAULT_FROM_EMAIL = 'ZhanCare.Ai <marzipan9256@yandex.com>'
+
+# ── hh.kz OAuth2 ──────────────────────────────────────────────────────────────
+HH_CLIENT_ID = os.getenv('HH_CLIENT_ID', 'SGKBP2C12FF2C3BIC1HLLFPE7BOTVUH1A98S0J60E7J9DNSKDPU4G6T0BVUS835B')
+HH_CLIENT_SECRET = os.getenv('HH_CLIENT_SECRET', 'T0HQC1RJKL0H8V2SPMMN78EM4BNTJFO8FUETBCE8047TFILBC082FGMI1EENGLOT')
+HH_REDIRECT_URI = os.getenv('HH_REDIRECT_URI', 'http://localhost:8000/callback')
+HH_AUTH_URL = 'https://hh.kz/oauth/authorize'
+HH_TOKEN_URL = 'https://hh.kz/oauth/token'
+HH_API_BASE = 'https://api.hh.kz'
+HH_EMPLOYER_ID = os.getenv('HH_EMPLOYER_ID', '188302453')
+
+# ── Token encryption (Fernet key — generate once: Fernet.generate_key().decode())
+TOKEN_ENCRYPTION_KEY = os.getenv('TOKEN_ENCRYPTION_KEY', '')
+
+# ── Mistral AI ─────────────────────────────────────────────────────────────────
+MISTRAL_MODEL_LARGE = 'mistral-large-2411'
+MISTRAL_MODEL_SMALL = 'mistral-small-2503'
+MISTRAL_MODEL_EMBED = 'mistral-embed'
+EMBEDDING_TOP_N = 30  # top N by semantic similarity sent to LLM for deep analysis
