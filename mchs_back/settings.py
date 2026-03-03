@@ -66,6 +66,7 @@ INSTALLED_APPS = [
     "auditlog",  # Audit logging for compliance
     # Apps
     "telegram_bot",
+    "rgf",
 ]
 
 APPEND_SLASH = False  # Disable appending slashes to URLs

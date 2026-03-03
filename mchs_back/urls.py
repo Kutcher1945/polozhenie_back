@@ -23,6 +23,7 @@ schema_view = get_schema_view(
 urlpatterns = [
     path('', RedirectView.as_view(url='/admin/')),
     path("admin/", admin.site.urls),
+    path("api/rgf/", include("rgf.urls")),
 
     re_path(
         r"^swagger(?P<format>\.json|\.yaml)$",
