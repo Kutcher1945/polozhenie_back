@@ -482,6 +482,45 @@ def _collect_warnings(tasks: int, functions: int) -> list[str]:
 
 # ─── Department-functions creation ────────────────────────────────────────────
 
+_FUNCTION_TYPE_KEYWORDS = {
+    1: ["контроль", "надзор", "проверк", "мониторинг"],           # Контрольная
+    3: ["регулирован", "норматив", "утвержден", "установлен"],     # Регулятивная
+    4: ["стратег", "планирован", "программ", "концепц"],           # Стратегическая
+    # 2 = Реализационная (default)
+}
+
+_ACTIVITY_AREA_KEYWORDS = {
+    4:  ["образован", "школ", "учебн", "педагог"],
+    5:  ["здравоохран", "медицин", "санитар", "больниц"],
+    6:  ["социальн", "пенсион", "пособи"],
+    7:  ["культур", "спорт", "туризм", "искусств"],
+    8:  ["сельск", "водн", "лесн", "рыбн", "природ", "земельн"],
+    9:  ["жилищн", "коммунальн", "архитектур", "строительств"],
+    10: ["промышленн", "энергетик", "недропользован"],
+    11: ["транспорт", "коммуникаци"],
+    12: ["экономик", "предпринимател"],
+    2:  ["оборон", "армия", "военн"],
+    3:  ["порядок", "безопасност", "правоохранит", "полиц", "суд"],
+    # 1 = государственные функции общего характера (default)
+}
+
+
+def _detect_function_type(text: str) -> int:
+    t = text.lower()
+    for type_id, keywords in _FUNCTION_TYPE_KEYWORDS.items():
+        if any(k in t for k in keywords):
+            return type_id
+    return 2  # Реализационная
+
+
+def _detect_activity_area(gu_name: str) -> Optional[int]:
+    t = gu_name.lower()
+    for area_id, keywords in _ACTIVITY_AREA_KEYWORDS.items():
+        if any(k in t for k in keywords):
+            return area_id
+    return None  # caller falls back to first from dict
+
+
 def _first_id(items: list) -> Optional[int]:
     """Return the `id` of the first item in a list, or None."""
     if items and isinstance(items, list):
@@ -611,8 +650,20 @@ def _create_functions_for_record(
         first_task_id   = t.get('id')
         first_task_name = t.get('taskText') or t.get('name') or t.get('text') or ''
 
-    # ── Kazakh translations (one batch call) ──────────────────────────────
-    kz_names = _batch_translate_to_kazakh(clean_funcs)
+    # ── Rule-based activity area from org name ────────────────────────────
+    detected_area = _detect_activity_area(gu_name)
+    act_area_id = detected_area if detected_area else default_activity_area_id
+    sub_area_id = default_sub_activity_area_id
+    if detected_area:
+        for area in activity_areas:
+            if area.get('id') == detected_area:
+                sub_areas = (area.get('subActivityAreas') or area.get('children') or area.get('subItems') or [])
+                sub_area_id = sub_areas[0].get('id') if sub_areas else detected_area
+                break
+
+    # ── Type name → ID map ────────────────────────────────────────────────
+    type_map  = {t.get('name', ''): t.get('id') for t in function_types}
+    type_names = {1: 'Контрольная', 2: 'Реализационная', 3: 'Регулятивная', 4: 'Стратегическая'}
 
     # ── guId as integer ───────────────────────────────────────────────────
     try:
@@ -623,31 +674,32 @@ def _create_functions_for_record(
     # ── Create one entry per function ─────────────────────────────────────
     created = 0
     failed  = 0
-    for i, func_text in enumerate(clean_funcs):
-        func_name_kz = kz_names[i] if i < len(kz_names) else func_text
+    for func_text in clean_funcs:
+        detected_type = _detect_function_type(func_text)
+        func_type_id  = type_map.get(type_names.get(detected_type, ''), default_function_type_id)
         payload = {
-            "positionDepartmentId":                    position_department_id,
-            "guId":                                    gu_id_int,
-            "guName":                                  gu_name,
-            "functionNameRu":                          func_text,
-            "functionNameKz":                          func_name_kz,
-            "functionDescription":                     func_text,
-            "functionTypeId":                          default_function_type_id,
-            "activityAreaId":                          default_activity_area_id,
-            "subActivityAreaId":                       default_sub_activity_area_id,
-            "digitalMaturityId":                       default_digital_maturity_id,
-            "functionalGroupId":                       default_functional_group_id,
-            "functionalSubgroupId":                    default_functional_subgroup_id,
-            "lawRu":                                   "Не указано",
-            "lawKz":                                   "",
-            "structuralElementRu":                     "Не указано",
-            "structuralElementKz":                     "",
-            "targetTask":                              "Не указано",
-            "resultDescription":                       func_text,
-            "isGovernmentService":                     False,
+            "positionDepartmentId":                       position_department_id,
+            "guId":                                       gu_id_int,
+            "guName":                                     gu_name,
+            "functionNameRu":                             func_text,
+            "functionNameKz":                             func_text,
+            "functionDescription":                        func_text,
+            "functionTypeId":                             func_type_id,
+            "activityAreaId":                             act_area_id,
+            "subActivityAreaId":                          sub_area_id,
+            "digitalMaturityId":                          default_digital_maturity_id,
+            "functionalGroupId":                          default_functional_group_id,
+            "functionalSubgroupId":                       default_functional_subgroup_id,
+            "lawRu":                                      "Не указано",
+            "lawKz":                                      "",
+            "structuralElementRu":                        "Не указано",
+            "structuralElementKz":                        "",
+            "targetTask":                                 "Не указано",
+            "resultDescription":                          func_text,
+            "isGovernmentService":                        False,
             "isImplementedThroughCompetitiveEnvironment": False,
-            "taskId":                                  first_task_id,
-            "taskName":                                first_task_name,
+            "taskId":                                     first_task_id,
+            "taskName":                                   first_task_name,
         }
         result = create_department_function(token, payload)
         if result and result.get('success'):
@@ -656,6 +708,119 @@ def _create_functions_for_record(
             failed += 1
 
     return {"created": created, "failed": failed}
+
+
+def create_one_department_function(
+    token: str,
+    position_department_id: int,
+    gu_id: str,
+    gu_name: str,
+    function_text: str,
+) -> dict:
+    """
+    Classify (rule-based) and create a single department function entry.
+    Returns {"success": bool, "function_id": int|None, "error": str|None}.
+    """
+    from .planning_api.rgf_api import (
+        get_position_department_tasks,
+        get_function_type_dict,
+        get_activity_areas_dict,
+        get_digital_maturity_dict,
+        get_ebk_fkr_dict,
+        create_department_function,
+    )
+
+    func_text = (function_text or '').strip()
+    if not func_text:
+        return {"success": False, "function_id": None, "error": "Empty function text"}
+
+    function_types     = get_function_type_dict(token)    or []
+    activity_areas     = get_activity_areas_dict(token)   or []
+    digital_maturities = get_digital_maturity_dict(token) or []
+    ebk_data           = get_ebk_fkr_dict(token)          or []
+
+    # ── Defaults ──────────────────────────────────────────────────────────
+    default_digital_maturity_id = _first_id(digital_maturities)
+
+    default_activity_area_id     = None
+    default_sub_activity_area_id = None
+    if activity_areas:
+        area = activity_areas[0]
+        default_activity_area_id = area.get('id')
+        sub_areas = (area.get('subActivityAreas') or area.get('children') or area.get('subItems') or [])
+        default_sub_activity_area_id = sub_areas[0].get('id') if sub_areas else default_activity_area_id
+
+    default_functional_group_id    = None
+    default_functional_subgroup_id = None
+    if ebk_data:
+        group = ebk_data[0]
+        default_functional_group_id = group.get('id')
+        subgroups = group.get('children') or group.get('subGroups') or group.get('items') or []
+        if subgroups:
+            default_functional_subgroup_id = subgroups[0].get('id')
+        else:
+            for item in ebk_data[1:]:
+                if item.get('parentId') == default_functional_group_id:
+                    default_functional_subgroup_id = item.get('id')
+                    break
+            if default_functional_subgroup_id is None:
+                default_functional_subgroup_id = default_functional_group_id
+
+    tasks = get_position_department_tasks(token, position_department_id) or []
+    first_task_id   = tasks[0].get('id') if tasks else None
+    first_task_name = (tasks[0].get('taskText') or tasks[0].get('name') or '') if tasks else ''
+
+    # ── Rule-based classification ─────────────────────────────────────────
+    func_type_id = _detect_function_type(func_text)
+    # Map detected type to actual ID from dict (dict IDs might not be 1-4)
+    type_map = {t.get('name', ''): t.get('id') for t in function_types}
+    type_names = {1: 'Контрольная', 2: 'Реализационная', 3: 'Регулятивная', 4: 'Стратегическая'}
+    func_type_id = type_map.get(type_names.get(func_type_id, ''), _first_id(function_types))
+
+    detected_area = _detect_activity_area(gu_name)
+    act_area_id = detected_area if detected_area else default_activity_area_id
+    # Find sub-area for the detected area
+    sub_area_id = default_sub_activity_area_id
+    if detected_area:
+        for area in activity_areas:
+            if area.get('id') == detected_area:
+                sub_areas = (area.get('subActivityAreas') or area.get('children') or area.get('subItems') or [])
+                sub_area_id = sub_areas[0].get('id') if sub_areas else detected_area
+                break
+
+    try:
+        gu_id_int = int(gu_id)
+    except (ValueError, TypeError):
+        gu_id_int = gu_id
+
+    payload = {
+        "positionDepartmentId":                       position_department_id,
+        "guId":                                       gu_id_int,
+        "guName":                                     gu_name,
+        "functionNameRu":                             func_text,
+        "functionNameKz":                             func_text,
+        "functionDescription":                        func_text,
+        "functionTypeId":                             func_type_id,
+        "activityAreaId":                             act_area_id,
+        "subActivityAreaId":                          sub_area_id,
+        "digitalMaturityId":                          default_digital_maturity_id,
+        "functionalGroupId":                          default_functional_group_id,
+        "functionalSubgroupId":                       default_functional_subgroup_id,
+        "lawRu":                                      "Не указано",
+        "lawKz":                                      "",
+        "structuralElementRu":                        "Не указано",
+        "structuralElementKz":                        "",
+        "targetTask":                                 "Не указано",
+        "resultDescription":                          func_text,
+        "isGovernmentService":                        False,
+        "isImplementedThroughCompetitiveEnvironment": False,
+        "taskId":                                     first_task_id,
+        "taskName":                                   first_task_name,
+    }
+    result = create_department_function(token, payload)
+    if result and result.get('success'):
+        return {"success": True, "function_id": result.get('id'), "error": None}
+    return {"success": False, "function_id": None, "error": str(result)}
 
 
 def _build_payload(gu_id: str, data: dict, gu_name: str = "", position_department_id: int = None) -> dict:
