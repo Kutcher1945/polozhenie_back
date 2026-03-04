@@ -68,3 +68,78 @@ def create_position_department(token, payload, lang=DEFAULT_LANG):
         return response.json()
     except Exception:
         return None
+
+
+# ─── Department-functions registry ────────────────────────────────────────────
+
+def _parse_list_response(data):
+    """Normalise API responses that may be a plain list or a paged envelope."""
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        for key in ('content', 'data', 'items', 'list', 'result'):
+            if key in data and isinstance(data[key], list):
+                return data[key]
+    return []
+
+
+def get_position_department_tasks(token, position_department_id, lang=DEFAULT_LANG):
+    """Return tasks stored on a position-department record (used to link functions)."""
+    url = (f"{BASE_URL}/gateway/rgf-module/position-department/tasks"
+           f"?lang={lang}&positionDepartmentId={position_department_id}")
+    response = requests.get(url, headers=_get_rgf_headers(token), verify=False)
+    if response.status_code == 200:
+        return _parse_list_response(response.json())
+    return []
+
+
+def get_function_type_dict(token, lang=DEFAULT_LANG):
+    url = f"{BASE_URL}/gateway/rgf-module/dictionary/function-type?lang={lang}&page=0&size=100"
+    response = requests.get(url, headers=_get_rgf_headers(token), verify=False)
+    if response.status_code == 200:
+        return _parse_list_response(response.json())
+    return []
+
+
+def get_activity_areas_dict(token, lang=DEFAULT_LANG):
+    url = f"{BASE_URL}/gateway/rgf-module/dictionary/activity-areas?lang={lang}&page=0&size=100"
+    response = requests.get(url, headers=_get_rgf_headers(token), verify=False)
+    if response.status_code == 200:
+        return _parse_list_response(response.json())
+    return []
+
+
+def get_digital_maturity_dict(token, lang=DEFAULT_LANG):
+    url = f"{BASE_URL}/gateway/rgf-module/dictionary/digital-maturity?lang={lang}&page=0&size=100"
+    response = requests.get(url, headers=_get_rgf_headers(token), verify=False)
+    if response.status_code == 200:
+        return _parse_list_response(response.json())
+    return []
+
+
+def get_ebk_fkr_dict(token, lang=DEFAULT_LANG):
+    """Return EBK functional classification groups (first page, 100 items)."""
+    url = (f"{BASE_URL}/gateway/rgf-module/current_ebk/fkr/get/"
+           f"?lang={lang}&page=1&limit=100&actual=true&dictType=10")
+    response = requests.get(url, headers=_get_rgf_headers(token), verify=False)
+    if response.status_code == 200:
+        return _parse_list_response(response.json())
+    return []
+
+
+def create_department_function(token, payload, lang=DEFAULT_LANG):
+    """Create one function registry entry. Returns API response dict or None."""
+    url = f"{BASE_URL}/gateway/rgf-module/department-functions?lang={lang}"
+    headers = {
+        "Accept": "application/json, text/plain, */*",
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {token}",
+        "selectedlevel": DEFAULT_SELECTED_LEVEL,
+        "Referer": f"{BASE_URL}/rgffront",
+        "Origin": BASE_URL,
+    }
+    response = requests.post(url, json=payload, headers=headers, verify=False)
+    try:
+        return response.json()
+    except Exception:
+        return None

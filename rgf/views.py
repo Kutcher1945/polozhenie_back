@@ -166,7 +166,7 @@ class ImportView(APIView):
                 results.append(result)
                 continue
 
-            result = services.import_document(file_bytes, filename, gu_id, token)
+            result = services.import_document(file_bytes, filename, gu_id, token, gu_name=gu_name or "")
             if gu_name:
                 result["gu_name"] = gu_name
             _log('import', filename=filename, gu_id=gu_id, gu_name=gu_name or '',

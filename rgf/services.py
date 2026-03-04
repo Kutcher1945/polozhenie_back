@@ -343,11 +343,23 @@ def import_parsed(gu_id: str, data: dict, token: str, gu_name: str = "") -> dict
 
     if result and result.get("success"):
         record_id = result.get("data")
+        # Auto-create function registry entries (Реестр государственных функций)
+        funcs_result = {"created": 0, "failed": 0}
+        if data.get("functions"):
+            try:
+                funcs_result = _create_functions_for_record(
+                    token, record_id, gu_id, gu_name,
+                    data.get("functions", []),
+                )
+            except Exception:
+                pass
         out = {
             "status": "success",
             "record_id": record_id,
             "gu_id": gu_id,
             "stats": {"rights": rights, "responsibilities": responsibilities, "tasks": tasks, "functions": functions},
+            "functions_created": funcs_result["created"],
+            "functions_failed":  funcs_result["failed"],
             "warnings": _collect_warnings(tasks, functions),
             "url": f"https://planning.gov.kz/rgffront#/rgffront/filter/positions/department/{record_id}/edit",
         }
@@ -363,7 +375,7 @@ def import_parsed(gu_id: str, data: dict, token: str, gu_name: str = "") -> dict
     return out
 
 
-def import_document(file_bytes: bytes, filename: str, gu_id: str, token: str) -> dict:
+def import_document(file_bytes: bytes, filename: str, gu_id: str, token: str, gu_name: str = "") -> dict:
     """
     Parse and import a single .docx file to the API.
     Returns result dict with status, record_id, stats.
@@ -420,12 +432,24 @@ def import_document(file_bytes: bytes, filename: str, gu_id: str, token: str) ->
 
         if result and result.get("success"):
             record_id = result.get("data")
+            # Auto-create function registry entries (Реестр государственных функций)
+            funcs_result = {"created": 0, "failed": 0}
+            if data.get("functions"):
+                try:
+                    funcs_result = _create_functions_for_record(
+                        token, record_id, gu_id, gu_name,
+                        data.get("functions", []),
+                    )
+                except Exception:
+                    pass
             out = {
                 "filename": filename,
                 "status": "success",
                 "record_id": record_id,
                 "gu_id": gu_id,
                 "stats": {"rights": rights, "responsibilities": responsibilities, "tasks": tasks, "functions": functions},
+                "functions_created": funcs_result["created"],
+                "functions_failed":  funcs_result["failed"],
                 "warnings": _collect_warnings(tasks, functions),
                 "url": f"https://planning.gov.kz/rgffront#/rgffront/filter/positions/department/{record_id}/edit",
             }
@@ -456,15 +480,197 @@ def _collect_warnings(tasks: int, functions: int) -> list[str]:
     return warnings
 
 
+# ─── Department-functions creation ────────────────────────────────────────────
+
+def _first_id(items: list) -> Optional[int]:
+    """Return the `id` of the first item in a list, or None."""
+    if items and isinstance(items, list):
+        return items[0].get('id')
+    return None
+
+
+def _batch_translate_to_kazakh(texts: list[str]) -> list[str]:
+    """
+    Translate a list of Russian strings to Kazakh in one Mistral call.
+    Returns the original list unchanged if Mistral is unavailable or fails.
+    """
+    if not texts:
+        return []
+    try:
+        from django.conf import settings
+        from mistralai import Mistral
+
+        api_key = getattr(settings, 'MISTRAL_API_KEY', None)
+        if not api_key:
+            return texts
+
+        model = getattr(settings, 'MISTRAL_MODEL_SMALL', 'mistral-small-latest')
+        client = Mistral(api_key=api_key)
+
+        numbered = "\n".join(f"{i + 1}. {t}" for i, t in enumerate(texts))
+        prompt = (
+            "Переведи следующие пункты на казахский язык. "
+            "Верни ТОЛЬКО пронумерованный список переводов в том же формате, без пояснений:\n\n"
+            + numbered
+        )
+        response = client.chat.complete(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        result_text = response.choices[0].message.content.strip()
+        translations: list[str] = []
+        for line in result_text.split('\n'):
+            line = line.strip()
+            if line and line[0].isdigit():
+                text = re.sub(r'^\d+[\.\)]\s*', '', line).strip()
+                translations.append(text)
+        if len(translations) == len(texts):
+            return translations
+        return texts
+    except Exception:
+        return texts
+
+
+def _create_functions_for_record(
+    token: str,
+    position_department_id: int,
+    gu_id: str,
+    gu_name: str,
+    functions: list[str],
+) -> dict:
+    """
+    Create function registry entries (Реестр государственных функций) for a
+    position-department record after successful import.
+
+    Dictionaries are fetched to pick the first valid option for required
+    enum/reference fields. Kazakh names are translated via Mistral (falls back
+    to the Russian text if Mistral is unavailable).
+
+    Returns {"created": N, "failed": M}.
+    """
+    from .planning_api.rgf_api import (
+        get_position_department_tasks,
+        get_function_type_dict,
+        get_activity_areas_dict,
+        get_digital_maturity_dict,
+        get_ebk_fkr_dict,
+        create_department_function,
+    )
+
+    clean_funcs = [f for f in (functions or []) if f and f.strip()]
+    if not clean_funcs:
+        return {"created": 0, "failed": 0}
+
+    # ── Fetch all dictionaries ─────────────────────────────────────────────
+    function_types    = get_function_type_dict(token)    or []
+    activity_areas    = get_activity_areas_dict(token)   or []
+    digital_maturities = get_digital_maturity_dict(token) or []
+    ebk_data          = get_ebk_fkr_dict(token)          or []
+
+    default_function_type_id    = _first_id(function_types)
+    default_digital_maturity_id = _first_id(digital_maturities)
+
+    # Activity area: first area + its first sub-area
+    default_activity_area_id     = None
+    default_sub_activity_area_id = None
+    if activity_areas:
+        area = activity_areas[0]
+        default_activity_area_id = area.get('id')
+        sub_areas = (area.get('subActivityAreas') or area.get('children') or
+                     area.get('subItems') or [])
+        if sub_areas:
+            default_sub_activity_area_id = sub_areas[0].get('id')
+        else:
+            default_sub_activity_area_id = default_activity_area_id
+
+    # EBK: first functional group + first subgroup inside it
+    default_functional_group_id    = None
+    default_functional_subgroup_id = None
+    if ebk_data:
+        group = ebk_data[0]
+        default_functional_group_id = group.get('id')
+        subgroups = (group.get('children') or group.get('subGroups') or
+                     group.get('items') or [])
+        if subgroups:
+            default_functional_subgroup_id = subgroups[0].get('id')
+        else:
+            # Flat list: find first item whose parentId matches the group
+            for item in ebk_data[1:]:
+                if item.get('parentId') == default_functional_group_id:
+                    default_functional_subgroup_id = item.get('id')
+                    break
+            if default_functional_subgroup_id is None:
+                default_functional_subgroup_id = default_functional_group_id
+
+    # ── Tasks for this record ─────────────────────────────────────────────
+    tasks = get_position_department_tasks(token, position_department_id) or []
+    first_task_id   = None
+    first_task_name = None
+    if tasks:
+        t = tasks[0]
+        first_task_id   = t.get('id')
+        first_task_name = t.get('taskText') or t.get('name') or t.get('text') or ''
+
+    # ── Kazakh translations (one batch call) ──────────────────────────────
+    kz_names = _batch_translate_to_kazakh(clean_funcs)
+
+    # ── guId as integer ───────────────────────────────────────────────────
+    try:
+        gu_id_int = int(gu_id)
+    except (ValueError, TypeError):
+        gu_id_int = gu_id
+
+    # ── Create one entry per function ─────────────────────────────────────
+    created = 0
+    failed  = 0
+    for i, func_text in enumerate(clean_funcs):
+        func_name_kz = kz_names[i] if i < len(kz_names) else func_text
+        payload = {
+            "positionDepartmentId":                    position_department_id,
+            "guId":                                    gu_id_int,
+            "guName":                                  gu_name,
+            "functionNameRu":                          func_text,
+            "functionNameKz":                          func_name_kz,
+            "functionDescription":                     func_text,
+            "functionTypeId":                          default_function_type_id,
+            "activityAreaId":                          default_activity_area_id,
+            "subActivityAreaId":                       default_sub_activity_area_id,
+            "digitalMaturityId":                       default_digital_maturity_id,
+            "functionalGroupId":                       default_functional_group_id,
+            "functionalSubgroupId":                    default_functional_subgroup_id,
+            "lawRu":                                   "Не указано",
+            "lawKz":                                   "",
+            "structuralElementRu":                     "Не указано",
+            "structuralElementKz":                     "",
+            "targetTask":                              "Не указано",
+            "resultDescription":                       func_text,
+            "isGovernmentService":                     False,
+            "isImplementedThroughCompetitiveEnvironment": False,
+            "taskId":                                  first_task_id,
+            "taskName":                                first_task_name,
+        }
+        result = create_department_function(token, payload)
+        if result and result.get('success'):
+            created += 1
+        else:
+            failed += 1
+
+    return {"created": created, "failed": failed}
+
+
 def _build_payload(gu_id: str, data: dict, gu_name: str = "", position_department_id: int = None) -> dict:
     if position_department_id is None:
         position_department_id = DEFAULT_POSITION_ID  # same as positionId = create new record
+    # API requires guId as integer, not string
+    try:
+        gu_id_value = int(gu_id)
+    except (ValueError, TypeError):
+        gu_id_value = gu_id
     return {
         "positionId":           DEFAULT_POSITION_ID,
         "positionDepartmentId": position_department_id,
-        "guId":                 gu_id,
+        "guId":                 gu_id_value,
         "guName":               gu_name,
-        "parentId":             DEFAULT_PARENT_ID,
         "departmentId":         None,
         "committeeId":          None,
         "departmentGuid":       None,
