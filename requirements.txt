@@ -13,6 +13,7 @@ graphene-django
 django-filter
 paramiko
 requests
+urllib3
 django-cron
 django-autocomplete-light
 django-crontab
