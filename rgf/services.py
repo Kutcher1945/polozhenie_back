@@ -7,6 +7,7 @@ import re
 import time
 import tempfile
 from pathlib import Path
+from typing import Optional
 
 from .planning_api.docx_parser import parse_docx_universal
 from .planning_api import org_mapping
@@ -481,7 +482,7 @@ def _build_payload(gu_id: str, data: dict, gu_name: str = "", position_departmen
     }
 
 
-def _find_existing_record_id(gu_id: str) -> int | None:
+def _find_existing_record_id(gu_id: str) -> Optional[int]:
     """Look up a previously imported record_id for this GU from our local DB."""
     try:
         from .models import ImportRecord

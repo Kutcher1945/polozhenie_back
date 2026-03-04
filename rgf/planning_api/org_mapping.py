@@ -6,6 +6,7 @@
 
 import re
 from pathlib import Path
+from typing import Optional
 from docx import Document
 
 
@@ -125,7 +126,7 @@ def find_gu_by_org_name(org_name, gu_list):
     return None, None
 
 
-_guid_mapping_cache: dict | None = None
+_guid_mapping_cache: Optional[dict] = None
 
 
 def load_guid_mapping(guid_file_path=None):
