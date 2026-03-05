@@ -11,9 +11,8 @@ from typing import Optional
 
 from .planning_api.docx_parser import parse_docx_universal
 from .planning_api import org_mapping
-from .planning_api.auth import login
 from .planning_api.rgf_api import get_gu_list, create_position_department, delete_position_department
-from .planning_api.config import IIN, PASSWORD, DEFAULT_POSITION_ID, DEFAULT_PARENT_ID
+from .planning_api.config import DEFAULT_POSITION_ID, DEFAULT_PARENT_ID
 
 
 def save_import_record(result: dict, data: dict, was_edited: bool = False) -> None:
@@ -47,29 +46,16 @@ def save_import_record(result: dict, data: dict, was_edited: bool = False) -> No
 # Import reports are written by the bulk_import script into this data directory
 DATA_DIR = Path(__file__).resolve().parent.parent.parent / "polozhenia" / "parse_functioons" / "data"
 
-# ─── Auth cache ──────────────────────────────────────────────────────────────
-def get_cached_auth() -> tuple[str, list]:
-    """Return (token, gu_list) — always fetches fresh from planning.gov.kz."""
-    token, _ = login(IIN, PASSWORD)
-    if not token:
-        raise RuntimeError("Failed to authenticate with planning.gov.kz")
-    gu_list = get_gu_list(token) or []
-    return token, gu_list
-
-
-# ─── Auth ────────────────────────────────────────────────────────────────────
-
-def get_token() -> str:
-    """Return a valid bearer token."""
-    token, _ = get_cached_auth()
-    return token
-
-
 # ─── Organizations ────────────────────────────────────────────────────────────
 
-def list_organizations() -> list[dict]:
+def get_gu_list_for_token(token: str) -> list:
+    """Fetch GU list using the caller's bearer token."""
+    return get_gu_list(token) or []
+
+
+def list_organizations(token: str) -> list[dict]:
     """Return all GU organizations from the API."""
-    _, gu_list = get_cached_auth()
+    gu_list = get_gu_list_for_token(token)
     return [{"id": o.get("id"), "name": o.get("nameRu", "")} for o in gu_list]
 
 
@@ -847,7 +833,7 @@ def _build_payload(gu_id: str, data: dict, gu_name: str = "", position_departmen
         "generalProvisions":    data.get("general_provisions", ""),
         "additions":            data.get("additions", ""),
         "tasks":                [{"taskText": t} for t in data.get("tasks", [])],
-        "functions":            [{"functionText": f} for f in data.get("functions", [])],
+        "functions":            [],
         "authoritiesLaw":       [{"authorityText": r} for r in data.get("authorities_rights", [])],
         "authoritiesResponsibilities": [{"authorityText": r} for r in data.get("authorities_responsibilities", [])],
     }

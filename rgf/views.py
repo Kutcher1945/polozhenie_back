@@ -11,7 +11,7 @@ from drf_yasg import openapi
 from .serializers import ImportFileSerializer, PreviewFileSerializer, DeleteRecordsSerializer
 from . import services
 from .planning_api import org_mapping
-from .planning_api.config import IIN, PASSWORD
+from .planning_api.auth import login as planning_login
 from .models import AuditLog, ImportRecord
 
 
@@ -30,15 +30,24 @@ def _log(action, filename='', gu_id='', gu_name='', status_val='', details=None)
         pass
 
 
+def _get_user_token(request) -> str | None:
+    """Extract Bearer token from Authorization header."""
+    auth = request.headers.get('Authorization', '')
+    if auth.startswith('Bearer '):
+        return auth[7:]
+    return None
+
+
 class AuthView(APIView):
     """POST /api/rgf/auth/ — verify login + password"""
 
     def post(self, request):
         login_input = request.data.get('login', '')
         password = request.data.get('password', '')
-        if login_input == IIN and password == PASSWORD:
+        token, _ = planning_login(login_input, password)
+        if token:
             _log('login', status_val='success')
-            return Response({"success": True})
+            return Response({"success": True, "token": token})
         _log('login', status_val='error', details={'reason': 'wrong credentials'})
         return Response({"error": "Неверный логин или пароль"}, status=status.HTTP_401_UNAUTHORIZED)
 
@@ -57,8 +66,11 @@ class OrganizationsView(APIView):
         ))}
     )
     def get(self, request):
+        token = _get_user_token(request)
+        if not token:
+            return Response({"error": "Not authenticated"}, status=status.HTTP_401_UNAUTHORIZED)
         try:
-            orgs = services.list_organizations()
+            orgs = services.list_organizations(token)
             return Response(orgs)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
@@ -87,8 +99,12 @@ class PreviewView(APIView):
         if not filename.endswith(".docx"):
             return Response({"error": "Only .docx files are supported"}, status=status.HTTP_400_BAD_REQUEST)
 
+        token = _get_user_token(request)
+        if not token:
+            return Response({"error": "Not authenticated"}, status=status.HTTP_401_UNAUTHORIZED)
+
         try:
-            _, full_gu_list = services.get_cached_auth()
+            full_gu_list = services.get_gu_list_for_token(token)
             result = services.preview_document(file_obj.read(), filename, full_gu_list)
             _log('preview',
                  filename=filename,
@@ -132,8 +148,12 @@ class ImportView(APIView):
             return Response({"error": f"Only .docx files are supported: {invalid}"},
                             status=status.HTTP_400_BAD_REQUEST)
 
+        token = _get_user_token(request)
+        if not token:
+            return Response({"error": "Not authenticated"}, status=status.HTTP_401_UNAUTHORIZED)
+
         try:
-            token, full_gu_list = services.get_cached_auth()
+            full_gu_list = services.get_gu_list_for_token(token)
         except Exception as e:
             return Response({"error": f"Auth failed: {e}"}, status=status.HTTP_502_BAD_GATEWAY)
 
@@ -203,8 +223,11 @@ class ImportParsedView(APIView):
             "additions":                    request.data.get('additions', ''),
         }
 
+        token = _get_user_token(request)
+        if not token:
+            return Response({"error": "Not authenticated"}, status=status.HTTP_401_UNAUTHORIZED)
+
         try:
-            token, _ = services.get_cached_auth()
             result = services.import_parsed(gu_id, data, token, gu_name=gu_name)
             _log('import', filename=filename, gu_id=gu_id,
                  status_val=result.get('status', ''),
@@ -280,8 +303,12 @@ class AiAnalyzeView(APIView):
         if not filename.endswith('.docx'):
             return Response({'error': 'Only .docx files are supported'}, status=status.HTTP_400_BAD_REQUEST)
 
+        token = _get_user_token(request)
+        if not token:
+            return Response({"error": "Not authenticated"}, status=status.HTTP_401_UNAUTHORIZED)
+
         try:
-            _, full_gu_list = services.get_cached_auth()
+            full_gu_list = services.get_gu_list_for_token(token)
             result = services.ai_analyze_document(file_obj.read(), filename, full_gu_list)
             return Response(result)
         except Exception as e:
@@ -320,10 +347,9 @@ class DeleteRecordsView(APIView):
         if not record_ids:
             return Response({"message": "No records found to delete", "deleted": [], "failed": []})
 
-        try:
-            token = services.get_token()
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
+        token = _get_user_token(request)
+        if not token:
+            return Response({"error": "Not authenticated"}, status=status.HTTP_401_UNAUTHORIZED)
 
         result = services.delete_records(record_ids, token)
         _log('delete', status_val='success',
