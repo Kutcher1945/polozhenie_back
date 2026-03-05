@@ -44,8 +44,6 @@ def _iter_texts(doc):
 
 # Numbered list item: "1) text" — also matches non-breaking space (\xa0)
 _ITEM_PAREN_RE = re.compile(r'^\d+\)[\s\xa0]')
-# Alternative numbering: "1. text"
-_ITEM_DOT_RE   = re.compile(r'^\d+\.[\s\xa0]')
 # Chapter header: "Глава 1.", "Глава 2.", etc.
 _CHAPTER_RE    = re.compile(r'^глава\s+\d+', re.I)
 
@@ -102,9 +100,6 @@ def parse_docx_universal(docx_path):
 
     zone = None   # 'general' | 'tasks' | 'authorities' | 'functions' | 'additions'
     sub  = None   # 'rights' | 'responsibilities' | 'combined'  (within authorities)
-    _func_fmt   = None   # 'paren' | 'dot' — format of first item in current functions zone
-    _in_sublist = False  # True while inside a N.-colon sub-list within functions
-
     # Structural progress flags — order-independent zone detection
     seen_general   = False
     seen_tasks     = False
@@ -112,11 +107,9 @@ def parse_docx_universal(docx_path):
 
     def _reset_chapter():
         """Full state reset between document chapters."""
-        nonlocal zone, sub, _func_fmt, _in_sublist, seen_general, seen_tasks, seen_functions
+        nonlocal zone, sub, seen_general, seen_tasks, seen_functions
         zone           = None
         sub            = None
-        _func_fmt      = None
-        _in_sublist    = False
         seen_general   = False
         seen_tasks     = False
         seen_functions = False
@@ -136,6 +129,8 @@ def parse_docx_universal(docx_path):
             # e.g. "2. Миссия, цель, задачи, функции, права и обязанности"
             if _is_multi_keyword_title(tl) and len(text) < 300:
                 _debug(f"  SKIP multi-kw: {text[:60]}")
+                if zone == 'general':
+                    zone = None  # stop capturing миссия/цель as general provisions
                 continue
 
             # ── General provisions ───────────────────────────────────────────
@@ -160,28 +155,40 @@ def parse_docx_universal(docx_path):
                 continue
 
             # ── Tasks ────────────────────────────────────────────────────────
-            if re.search(r'\bзадачи\b', tl) and len(text) < 120:
+            if re.match(r'^(\d+[\.\)]\s*)?задачи\b', tl, re.I) and len(text) < 120:
                 if not _is_multi_keyword_title(tl) and not re.search(r'задачи.{2,}права|задачи.{2,}функции', tl):
                     zone = 'tasks'
                     sub  = None
-                    _func_fmt = None
                     seen_tasks = True
                     _debug(f"  ZONE→tasks: {text[:60]}")
                     continue
 
             # ── Functions ────────────────────────────────────────────────────
-            if re.search(r'\bфункции\b', tl) and len(text) < 200:
+            if re.match(r'^(\d+[\.\)]\s*)?функции\b', tl, re.I) and len(text) < 200:
                 if not _is_multi_keyword_title(tl) and not re.search(r'функции.{2,}права', tl):
-                    if zone != 'functions':
-                        _func_fmt = None  # reset only when truly entering from outside
                     zone = 'functions'
                     sub  = None
                     seen_functions = True
                     _debug(f"  ZONE→functions: {text[:60]}")
                     continue
 
+            # ── Organizational / leadership sections → additions ──────────────
+            if (re.match(r'^(\d+[\.\)]\s*)?(организация\s+деятельности|статус)', tl, re.I)
+                    and re.search(r'деятельности|руководител', tl, re.I)
+                    and len(text) < 200):
+                zone = 'additions'
+                additions.append(text)
+                _debug(f"  ZONE→additions(org/status): {text[:60]}")
+                continue
+
             # ── Authorities / Полномочия ──────────────────────────────────────
-            if re.search(r'\bполномочия\b', tl) and len(text) < 150:
+            # "Полномочия руководителя" belongs to additions, not authorities
+            if re.match(r'^(\d+[\.\)]\s*)?полномочия\b', tl, re.I) and len(text) < 150:
+                if re.search(r'руководител', tl, re.I):
+                    zone = 'additions'
+                    additions.append(text)
+                    _debug(f"  ZONE→additions(полномочия руководителя): {text[:60]}")
+                    continue
                 zone = 'authorities'
                 sub  = None
                 if re.search(r'права\s*:', tl):
@@ -248,43 +255,8 @@ def parse_docx_universal(docx_path):
                     and len(text) < 300):
                 zone = 'authorities'
                 sub  = 'combined'
-                _in_sublist = False
                 _debug(f"  ZONE→authorities(вправе): {text[:60]}")
                 continue
-
-            # ── Sub-zone headers within functions: "1) Права:" / "2) Обязанности:" ──
-            # Some documents list rights/responsibilities as numbered sub-headers
-            # inside what looks like a functions section.
-            sub_detected = _sub_from_text(tl)
-            if sub_detected:
-                zone = 'authorities'
-                sub  = sub_detected
-                _in_sublist = False
-                _debug(f"  ZONE→authorities({sub_detected}) from functions: {text[:60]}")
-                continue
-
-            if _ITEM_PAREN_RE.match(text):
-                if _func_fmt is None:
-                    _func_fmt = 'paren'
-                # Implicit rights section: N) item appears outside a sub-list when
-                # all function items so far used N. format.
-                # Require semantic confirmation to avoid false positives.
-                if _func_fmt == 'dot' and not _in_sublist:
-                    if re.search(r'прав|обязан|полномочи', tl):
-                        zone = 'authorities'
-                        sub  = 'combined'
-                        _in_sublist = False
-                        _debug(f"  ZONE→authorities(fmt-switch): {text[:60]}")
-                        if len(text) > 10:
-                            authorities_rights.append(text)
-                            authorities_responsibilities.append(text)
-                        continue
-
-            elif _ITEM_DOT_RE.match(text):
-                if _func_fmt is None:
-                    _func_fmt = 'dot'
-                # Track whether next N) items are sub-items of this N. item
-                _in_sublist = text.rstrip().endswith(':')
 
             if _NON_ITEM_HEADERS.match(text):
                 continue

@@ -140,6 +140,13 @@ def create_department_function(token, payload, lang=DEFAULT_LANG):
     }
     response = requests.post(url, json=payload, headers=headers, verify=False)
     try:
-        return response.json()
+        data = response.json()
     except Exception:
-        return None
+        return {"success": False, "_http_status": response.status_code, "_raw": response.text[:300]}
+    # Normalise: treat 2xx responses without an explicit success flag as successful
+    if response.status_code in (200, 201):
+        if isinstance(data, dict) and "success" not in data:
+            data = {"success": True, **data}
+        elif not isinstance(data, dict):
+            return {"success": True, "data": data}
+    return data

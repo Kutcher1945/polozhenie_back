@@ -346,6 +346,7 @@ def import_parsed(gu_id: str, data: dict, token: str, gu_name: str = "") -> dict
             "stats": {"rights": rights, "responsibilities": responsibilities, "tasks": tasks, "functions": functions},
             "functions_created": funcs_result["created"],
             "functions_failed":  funcs_result["failed"],
+            "functions_error":   funcs_result.get("first_error"),
             "warnings": _collect_warnings(tasks, functions),
             "url": f"https://planning.gov.kz/rgffront#/rgffront/filter/positions/department/{record_id}/edit",
         }
@@ -436,6 +437,7 @@ def import_document(file_bytes: bytes, filename: str, gu_id: str, token: str, gu
                 "stats": {"rights": rights, "responsibilities": responsibilities, "tasks": tasks, "functions": functions},
                 "functions_created": funcs_result["created"],
                 "functions_failed":  funcs_result["failed"],
+                "functions_error":   funcs_result.get("first_error"),
                 "warnings": _collect_warnings(tasks, functions),
                 "url": f"https://planning.gov.kz/rgffront#/rgffront/filter/positions/department/{record_id}/edit",
             }
@@ -658,8 +660,9 @@ def _create_functions_for_record(
         gu_id_int = gu_id
 
     # ── Create one entry per function ─────────────────────────────────────
-    created = 0
-    failed  = 0
+    created    = 0
+    failed     = 0
+    first_error = None
     for func_text in clean_funcs:
         detected_type = _detect_function_type(func_text)
         func_type_id  = type_map.get(type_names.get(detected_type, ''), default_function_type_id)
@@ -692,8 +695,10 @@ def _create_functions_for_record(
             created += 1
         else:
             failed += 1
+            if first_error is None:
+                first_error = result  # capture first failure for diagnostics
 
-    return {"created": created, "failed": failed}
+    return {"created": created, "failed": failed, "first_error": first_error}
 
 
 def create_one_department_function(
